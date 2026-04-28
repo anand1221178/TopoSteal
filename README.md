@@ -25,6 +25,7 @@ Machine (3426MB total)
 ### The Resulting Distance Matrix
 TopoSteal parses this tree and generates the following distance matrix. Notice how the physical silicon clusters perfectly map to the distance penalties:
 
+```text
   Distance matrix (14 cores):
      C0   C1   C2   C3   C4   C5   C6   C7   C8   C9   C10  C11  C12  C13  
 C0   0    1    1    1    8    8    8    8    8    8    8    8    8    8    
@@ -41,3 +42,4 @@ C10  8    8    8    8    8    8    8    8    8    1    0    1    1    1
 C11  8    8    8    8    8    8    8    8    8    1    1    0    1    1    
 C12  8    8    8    8    8    8    8    8    8    1    1    1    0    1    
 C13  8    8    8    8    8    8    8    8    8    1    1    1    1    0
+```
