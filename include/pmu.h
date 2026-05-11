@@ -1,9 +1,11 @@
 #ifndef PMU_H
 #define PMU_H
+
 #include <stdint.h>
 #include <stdatomic.h>
 #include <pthread.h>
 #include "topo.h"
+
 typedef struct
 {
     /* NUmber of workers */
@@ -31,4 +33,5 @@ void pmu_start(pmu_t *pmu);
 void pmu_stop(pmu_t *pmu);
 /* miss rate */
 float pmu_get_miss_rate(pmu_t *pmu, uint32_t worker_id);
+
 #endif
