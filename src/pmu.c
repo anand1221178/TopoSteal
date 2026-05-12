@@ -3,6 +3,8 @@
 #include <sys/syscall.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
+#include <string.h>
+#include <stdio.h>
 
 
 int pmu_init(pmu_t *pmu, uint32_t num_workers)
