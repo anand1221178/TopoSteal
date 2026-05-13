@@ -152,3 +152,8 @@ void topo_print(topo_t *t)
 		printf("\n");
 	}
 }
+
+uint32_t topo_get_distance(topo_t *t, uint8_t index_1, uint8_t index_2)
+{
+	return t->distance[index_1][index_2];
+}
