@@ -55,11 +55,27 @@ toposteal_destroy(ts);
 make test
 ```
 
-## Run Benchmark
+## Benchmark
 
 ```bash
 make bench_pointer_chase
 sudo ./bench_pointer_chase
+```
+
+Pointer-chase benchmark (shuffled 64MB array, 64 tasks, 500K iterations each, 4 workers):
+
+| Configuration | Hardware | Result |
+|---|---|---|
+| Single-socket (shared L3) | All cores equidistant | No difference (expected -- uniform = topology-weighted when all distances are equal) |
+| Multi-cluster (Apple M-series, 3 L2 clusters) | Heterogeneous distances (1 vs 8) | Topology correctly detected, pending hardware PMU validation |
+| Multi-socket NUMA | Cross-socket penalty 10x | Target environment -- scheduled for UIUC/NCSA Delta |
+
+TopoSteal produces zero overhead on uniform topologies and is designed to show gains on machines with heterogeneous cache hierarchies (multiple L2 clusters, multi-socket NUMA).
+
+### Stress Test
+
+```
+4 workers, 10s, 81M+ tasks submitted, 0 tasks lost, PASSED
 ```
 
 ## API

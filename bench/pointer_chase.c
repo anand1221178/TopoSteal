@@ -5,13 +5,14 @@
 #include <time.h>
 #include <pthread.h>
 #include <stdatomic.h>
+#include <sched.h>
 #include "../include/toposteal.h"
 #include "../include/deque.h"
 
-#define NUM_WORKERS    4
-#define ARRAY_SIZE     (8 * 1024 * 1024)
-#define CHASE_ITERS    500000
-#define NUM_TASKS      64
+#define NUM_WORKERS    8
+#define ARRAY_SIZE     (32 * 1024)
+#define CHASE_ITERS    2000000
+#define NUM_TASKS      256
 #define TRIALS         5
 
 static size_t *chase_array;
@@ -49,6 +50,11 @@ static void *uniform_worker(void *arg) {
     uniform_ctx_t *ctx = (uniform_ctx_t *)arg;
     unsigned int seed = (unsigned int)time(NULL) ^ ctx->id;
     task_t task;
+
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(ctx->id, &cpuset);
+    pthread_setaffinity_np(pthread_self(), sizeof(cpuset), &cpuset);
 
     while (atomic_load(ctx->tasks_done) < NUM_TASKS) {
         if (deque_pop(&ctx->queues[ctx->id], &task)) {
@@ -123,10 +129,10 @@ int main() {
     shuffle_array(chase_array, ARRAY_SIZE);
 
     printf("Pointer-Chase Benchmark\n");
-    printf("Array: %zu MB, %d tasks, %d iterations/task, %d trials\n",
-        (ARRAY_SIZE * sizeof(size_t)) / (1024 * 1024),
+    printf("Array: %zu KB (fits in L2), %d tasks, %d iterations/task, %d trials\n",
+        (ARRAY_SIZE * sizeof(size_t)) / 1024,
         NUM_TASKS, CHASE_ITERS, TRIALS);
-    printf("Both configurations use %d parallel worker threads.\n\n", NUM_WORKERS);
+    printf("Both configurations use %d parallel workers (1 per PU).\n\n", NUM_WORKERS);
 
     double uniform_total = 0, topo_total = 0;
 

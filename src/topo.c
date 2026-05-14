@@ -22,12 +22,12 @@ void topo_init(topo_t *t)
 	/*We need to now find the number of cores*/
 	//Hwloc represents everything as objects in a tree, so we ask hwloc for the depth of the core level in the tree, and then count how many objects exisit in that depth.
 	
-	int depth = hwloc_get_type_depth(hwloc_topo, HWLOC_OBJ_CORE);
+	int depth = hwloc_get_type_depth(hwloc_topo, HWLOC_OBJ_PU);
 	if (depth == HWLOC_TYPE_DEPTH_UNKNOWN) {
-    		printf("[topo] WARNING: core depth unknown, applying mock topology\n");
-    		t->num_cores = 4;  // default
+    		printf("[topo] WARNING: PU depth unknown, applying mock topology\n");
+    		t->num_cores = 4;
     		topo_apply_mock(t);
-    		return;            // early exit, skip the hwloc tree walk
+    		return;
 	}
 
 	t->num_cores = hwloc_get_nbobjs_by_depth(hwloc_topo, depth);
@@ -68,6 +68,11 @@ void topo_init(topo_t *t)
 			/*Case switch statement*/
 			switch(ancestor->type)
 			{
+				case HWLOC_OBJ_CORE:
+					t->distance[i][j] = TOPO_DIST_CORE;
+					break;
+				case HWLOC_OBJ_L1DCACHE:
+				case HWLOC_OBJ_L1ICACHE:
 				case HWLOC_OBJ_L2CACHE:
 					t->distance[i][j] = TOPO_DIST_L2_SHARED;
 					break;
@@ -81,11 +86,9 @@ void topo_init(topo_t *t)
 					t->distance[i][j] = TOPO_DIST_NUMA;
 					break;
 				default :
-					/*FALBACK for any erros in hwloc due to wierdness*/
 					mock_needed =1;
 					t->distance[i][j] = TOPO_DIST_PACKAGE;
 					break;
-
 			}
 		}
 	}

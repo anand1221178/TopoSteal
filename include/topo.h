@@ -6,6 +6,7 @@
 #define TOPO_MAX_CORES 64
 
 #define TOPO_DIST_SAME       0
+#define TOPO_DIST_CORE       1
 #define TOPO_DIST_L2_SHARED  1
 #define TOPO_DIST_L3_SHARED  4
 #define TOPO_DIST_PACKAGE    8

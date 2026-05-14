@@ -4,9 +4,11 @@
 #include "../include/weights.h"
 #include "../include/feedback.h"
 #include "../include/deque.h"
+#define _GNU_SOURCE
 #include <stdlib.h>
 #include <stdio.h>
 #include <pthread.h>
+#include <sched.h>
 #include <stdatomic.h>
 #include <string.h>
 #include <time.h>
@@ -35,6 +37,11 @@ static void *worker_thread(void *arg) {
     toposteal_t *ts = ctx->ts;
     unsigned int seed = (unsigned int)time(NULL) ^ id;
     task_t task;
+
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(id, &cpuset);
+    pthread_setaffinity_np(pthread_self(), sizeof(cpuset), &cpuset);
 
     while (atomic_load(&ts->keep_running)) {
         // Step 1: try own deque
