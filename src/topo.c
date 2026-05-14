@@ -71,7 +71,7 @@ void topo_init(topo_t *t)
 				case HWLOC_OBJ_CORE:
 					t->distance[i][j] = TOPO_DIST_CORE;
 					break;
-				case HWLOC_OBJ_L1DCACHE:
+				case HWLOC_OBJ_L1CACHE:
 				case HWLOC_OBJ_L1ICACHE:
 				case HWLOC_OBJ_L2CACHE:
 					t->distance[i][j] = TOPO_DIST_L2_SHARED;
