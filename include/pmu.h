@@ -22,6 +22,8 @@ typedef struct
     _Atomic int keep_running;
     /* 1 = hardware counters, 0 = software proxy */
     int hardware_mode;
+    void (*feedback_cb)(void *);
+    void *feedback_ctx;
 }pmu_t;
 
 /* Function declares */

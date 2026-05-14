@@ -31,6 +31,11 @@ struct toposteal_t {
     _Atomic int tasks_pending;
 };
 
+static void feedback_callback(void *ctx) {
+    feedback_t *f = (feedback_t *)ctx;
+    feedback_update(f);
+}
+
 static void *worker_thread(void *arg) {
     worker_ctx_t *ctx = (worker_ctx_t *)arg;
     int id = ctx->worker_id;
@@ -84,6 +89,8 @@ toposteal_t *toposteal_init(int num_workers) {
     for (int i = 0; i < num_workers; i++)
         deque_init(&ts->deques[i]);
 
+    ts->pmu.feedback_cb = feedback_callback;
+    ts->pmu.feedback_ctx = &ts->feedback;
     pmu_start(&ts->pmu);
 
     // Launch worker threads

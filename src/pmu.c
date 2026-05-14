@@ -67,19 +67,24 @@ static void *pmu_sampler_thread(void *arg)
     /* cast from void to pmu */
     pmu_t *pmu = (pmu_t *)arg;
 
+    int tick = 0;
     while(pmu->keep_running == 1)
     {
         /* For each worker */
         for (int i = 0; i < pmu->num_workers; ++i)
         {
-            uint64_t curr_count; /* var to store the fd reads */
-            uint64_t delta; /* change in reads */
+            uint64_t curr_count;
+            uint64_t delta;
             read(pmu->fds[i], &curr_count, sizeof(curr_count));
             delta = curr_count - pmu->previous_readings[i];
-            /* We divide by the interval to get the RATE - cache misses per millisecond for worker i*/
             pmu->miss_rates[i] = (float)delta /10.0f;
             pmu->previous_readings[i] = curr_count;
         }
+
+        tick++;
+        if (tick % 5 == 0 && pmu->feedback_cb)
+            pmu->feedback_cb(pmu->feedback_ctx);
+
         usleep(10000);
     }
 
