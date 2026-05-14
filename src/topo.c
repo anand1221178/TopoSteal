@@ -24,10 +24,13 @@ void topo_init(topo_t *t)
 	
 	int depth = hwloc_get_type_depth(hwloc_topo, HWLOC_OBJ_PU);
 	if (depth == HWLOC_TYPE_DEPTH_UNKNOWN) {
-    		printf("[topo] WARNING: PU depth unknown, applying mock topology\n");
-    		t->num_cores = 4;
-    		topo_apply_mock(t);
-    		return;
+    		depth = hwloc_get_type_depth(hwloc_topo, HWLOC_OBJ_CORE);
+    		if (depth == HWLOC_TYPE_DEPTH_UNKNOWN) {
+    			printf("[topo] WARNING: topology depth unknown, applying mock\n");
+    			t->num_cores = 4;
+    			topo_apply_mock(t);
+    			return;
+    		}
 	}
 
 	t->num_cores = hwloc_get_nbobjs_by_depth(hwloc_topo, depth);

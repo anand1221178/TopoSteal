@@ -62,21 +62,24 @@ make bench_pointer_chase
 sudo ./bench_pointer_chase
 ```
 
-Pointer-chase benchmark (shuffled 64MB array, 64 tasks, 500K iterations each, 4 workers):
+### Correctness
 
-| Configuration | Hardware | Result |
-|---|---|---|
-| Single-socket (shared L3) | All cores equidistant | No difference (expected -- uniform = topology-weighted when all distances are equal) |
-| Multi-cluster (Apple M-series, 3 L2 clusters) | Heterogeneous distances (1 vs 8) | Topology correctly detected, pending hardware PMU validation |
-| Multi-socket NUMA | Cross-socket penalty 10x | Target environment -- scheduled for UIUC/NCSA Delta |
+Stress test: 4 workers, 10 seconds continuous push/pop/steal, 81M+ tasks, zero tasks lost.
 
-TopoSteal produces zero overhead on uniform topologies and is designed to show gains on machines with heterogeneous cache hierarchies (multiple L2 clusters, multi-socket NUMA).
+### Performance
 
-### Stress Test
+Pointer-chase benchmark, 4 parallel workers, 5 trials (mean):
 
-```
-4 workers, 10s, 81M+ tasks submitted, 0 tasks lost, PASSED
-```
+| Machine | Topology | Uniform | TopoSteal | Notes |
+|---|---|---|---|---|
+| 4-core Xeon (single socket, shared L3) | All distances equal (4) | 0.4496s | 0.4806s | No topology heterogeneity to exploit. ~7% overhead from PMU sampler thread. |
+
+TopoSteal is designed for machines with **heterogeneous cache distances**:
+
+- **Multi-cluster CPUs** (Apple M-series: 3 separate L2 caches, distances 1 vs 8) -- topology correctly detected, pending PMU validation
+- **Multi-socket NUMA** (cross-socket penalty up to 10x) -- target environment, scheduled for UIUC/NCSA Delta
+
+On uniform topologies (single socket, shared L3), all distances are equal and topology-weighted stealing degenerates to uniform stealing. The measured overhead comes from the PMU background thread, which will be offset by the topology benefit on heterogeneous hardware.
 
 ## API
 
