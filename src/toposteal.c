@@ -1,10 +1,10 @@
+#define _GNU_SOURCE
 #include "../include/toposteal.h"
 #include "../include/topo.h"
 #include "../include/pmu.h"
 #include "../include/weights.h"
 #include "../include/feedback.h"
 #include "../include/deque.h"
-#define _GNU_SOURCE
 #include <stdlib.h>
 #include <stdio.h>
 #include <pthread.h>
