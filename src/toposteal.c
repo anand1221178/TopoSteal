@@ -62,6 +62,9 @@ toposteal_t *toposteal_init(int num_workers) {
     atomic_store(&ts->keep_running, 1);
 
     topo_init(&ts->topo);
+    // Clamp topology to the number of workers we actually have
+    if (ts->topo.num_cores > num_workers)
+        ts->topo.num_cores = num_workers;
     if (pmu_init(&ts->pmu, num_workers) == -1) {
         printf("[toposteal] WARNING: PMU init failed, running without PMU\n");
     }
