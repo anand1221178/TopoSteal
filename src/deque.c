@@ -27,7 +27,13 @@ int deque_pop(deque_t *q, task_t *t_out)
 {
     /* Shrink the deque claim the bottom */
     //Read the bottom
-    size_t b = atomic_load_explicit(&q->bottom, memory_order_relaxed) - 1;
+    size_t b = atomic_load_explicit(&q->bottom, memory_order_relaxed);
+
+    // Empty check before decrementing — prevents unsigned underflow
+    size_t t = atomic_load_explicit(&q->top, memory_order_relaxed);
+    if (b <= t) return 0;
+
+    b = b - 1;
     atomic_store_explicit(&q->bottom, b, memory_order_relaxed);
 
     //We need to make sure the cpu weite the new bottom to RAM before twe check the top
@@ -35,14 +41,14 @@ int deque_pop(deque_t *q, task_t *t_out)
 
     /* Now we can read the top */
     //Check if the theives have taken anything
-    size_t t = atomic_load_explicit(&q->top, memory_order_relaxed);
+    t = atomic_load_explicit(&q->top, memory_order_relaxed);
 
     /* Check the state of the deque -> we have 3 scenariaos here: */
     //1 dequeu was empty
     if(b< t)
     {
         atomic_store_explicit(&q->bottom, t, memory_order_relaxed);
-        return 0; 
+        return 0;
     }
     
     //If we make it past the above function, the taks is either ours or its a tie, so we copy it 
