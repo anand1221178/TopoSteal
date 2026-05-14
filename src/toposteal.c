@@ -26,6 +26,7 @@ struct toposteal_t {
     worker_ctx_t contexts[TOPO_MAX_CORES];
     int num_workers;
     _Atomic int keep_running;
+    _Atomic int tasks_pending;
 };
 
 static void *worker_thread(void *arg) {
@@ -39,6 +40,7 @@ static void *worker_thread(void *arg) {
         // Step 1: try own deque
         if (deque_pop(&ts->deques[id], &task)) {
             task.fn(task.arg);
+            atomic_fetch_sub(&ts->tasks_pending, 1);
             continue;
         }
         // Step 2: pick a victim
@@ -48,6 +50,7 @@ static void *worker_thread(void *arg) {
         // Step 3: steal from victim
         if (deque_steal(&ts->deques[victim], &task)) {
             task.fn(task.arg);
+            atomic_fetch_sub(&ts->tasks_pending, 1);
         }
     }
     return NULL;
@@ -92,20 +95,14 @@ void toposteal_submit(toposteal_t *ts, void (*fn)(void *), void *arg) {
     static _Atomic int next_worker = 0;
     int target = atomic_fetch_add(&next_worker, 1) % ts->num_workers;
     task_t t = { .fn = fn, .arg = arg };
+    atomic_fetch_add(&ts->tasks_pending, 1);
     deque_push(&ts->deques[target], t);
 }
 
 void toposteal_wait(toposteal_t *ts) {
-    // Spin until all deques are empty
-    int empty;
-    do {
-        empty = 1;
-        for (int i = 0; i < ts->num_workers; i++) {
-            size_t b = atomic_load(&ts->deques[i].bottom);
-            size_t t = atomic_load(&ts->deques[i].top);
-            if (b > t) { empty = 0; break; }
-        }
-    } while (!empty);
+    // Spin until all tasks are submitted AND finished executing
+    while (atomic_load(&ts->tasks_pending) > 0)
+        ;
 }
 
 void toposteal_destroy(toposteal_t *ts) {
