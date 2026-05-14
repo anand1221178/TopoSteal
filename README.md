@@ -1,45 +1,91 @@
-## Hardware Topology & Distance Matrix
+# TopoSteal
 
-TopoSteal uses `hwloc` to dynamically detect the physical layout of the CPU and encode it into a latency distance matrix. This ensures the scheduler understands the actual hardware boundaries (like P-core vs. E-core clusters) before making work-stealing decisions.
+Topology-aware work-stealing runtime that reduces cache misses using live PMU feedback.
 
-### Example: Apple Silicon (M-Series) Topology
-When running `lstopo` on an M-series chip, we can see three distinct CPU clusters, each sharing its own separate L2 cache, with no shared L3 cache:
+Most parallel runtimes (TBB, Cilk, OpenMP) treat all cores as equally close. They're not. TopoSteal reads the CPU's physical topology via `hwloc`, builds a distance matrix, and biases work-stealing toward cache-local neighbours. A background thread polls hardware performance counters (`perf_event_open`) and dynamically adjusts steal probabilities as the workload shifts.
 
-```text
-Machine (3426MB total)
-  Package L#0
-    NUMANode L#0 (P#0 3426MB)
-    L2 L#0 (4096KB)
-      L1d L#0 (64KB) + L1i L#0 (128KB) + Core L#0 + PU L#0 (P#0)
-      L1d L#1 (64KB) + L1i L#1 (128KB) + Core L#1 + PU L#1 (P#1)
-      ...[Cores 2-3]
-    L2 L#1 (16MB)
-      L1d L#4 (128KB) + L1i L#4 (192KB) + Core L#4 + PU L#4 (P#4)
-      ... [Cores 5-8]
-    L2 L#2 (16MB)
-      L1d L#9 (128KB) + L1i L#9 (192KB) + Core L#9 + PU L#9 (P#9)
-      ... [Cores 10-13]
-  CoProc(OpenCL) "opencl0d0"
+## Architecture
+
+```
++---------------------------------------------------+
+|  Application Layer                                 |
+|  toposteal_init / submit / wait / destroy          |
++---------------------------------------------------+
+|  Topology Graph (hwloc)                            |
+|  L2-shared=1, L3-shared=4, same-package=8,        |
+|  cross-NUMA=10                                     |
++---------------------------------------------------+
+|  Work-Stealing Deques (Chase-Lev, lock-free)       |
+|  One per worker, C11 atomics                       |
++---------------------------------------------------+
+|  PMU Sampler (background thread, 10ms poll)        |
+|  perf_event_open per worker, rolling miss rate     |
++---------------------------------------------------+
+|  Feedback Loop                                     |
+|  effective_weight = base_dist * (1 + miss_rate)    |
+|  Rebuilds steal probability table dynamically      |
++---------------------------------------------------+
 ```
 
-### The Resulting Distance Matrix
-TopoSteal parses this tree and generates the following distance matrix. Notice how the physical silicon clusters perfectly map to the distance penalties:
+## Build
 
-```text
-  Distance matrix (14 cores):
-     C0   C1   C2   C3   C4   C5   C6   C7   C8   C9   C10  C11  C12  C13  
-C0   0    1    1    1    8    8    8    8    8    8    8    8    8    8    
-C1   1    0    1    1    8    8    8    8    8    8    8    8    8    8    
-C2   1    1    0    1    8    8    8    8    8    8    8    8    8    8    
-C3   1    1    1    0    8    8    8    8    8    8    8    8    8    8    
-C4   8    8    8    8    0    1    1    1    1    8    8    8    8    8    
-C5   8    8    8    8    1    0    1    1    1    8    8    8    8    8    
-C6   8    8    8    8    1    1    0    1    1    8    8    8    8    8    
-C7   8    8    8    8    1    1    1    0    1    8    8    8    8    8    
-C8   8    8    8    8    1    1    1    1    0    8    8    8    8    8    
-C9   8    8    8    8    8    8    8    8    8    0    1    1    1    1    
-C10  8    8    8    8    8    8    8    8    8    1    0    1    1    1    
-C11  8    8    8    8    8    8    8    8    8    1    1    0    1    1    
-C12  8    8    8    8    8    8    8    8    8    1    1    1    0    1    
-C13  8    8    8    8    8    8    8    8    8    1    1    1    1    0
+```bash
+make
 ```
+
+Produces `libtoposteal.a`. Requires `libhwloc-dev` and `pthreads`.
+
+## Usage
+
+```c
+#include "toposteal.h"
+
+toposteal_t *ts = toposteal_init(4);
+
+for (int i = 0; i < 1000; i++)
+    toposteal_submit(ts, my_function, &my_args[i]);
+
+toposteal_wait(ts);
+toposteal_destroy(ts);
+```
+
+## Run Tests
+
+```bash
+make test
+```
+
+## Run Benchmark
+
+```bash
+make bench_pointer_chase
+sudo ./bench_pointer_chase
+```
+
+## API
+
+| Function | Description |
+|---|---|
+| `toposteal_init(int n)` | Create runtime with `n` worker threads |
+| `toposteal_submit(ts, fn, arg)` | Submit a task for parallel execution |
+| `toposteal_wait(ts)` | Block until all submitted tasks complete |
+| `toposteal_destroy(ts)` | Shut down workers and free resources |
+
+## Project Structure
+
+```
+include/       Headers (topo.h, pmu.h, deque.h, weights.h, feedback.h, toposteal.h)
+src/           Implementation
+tests/         Unit tests and stress tests
+bench/         Benchmarks (pointer chase)
+examples/      Usage examples (parallel_sum)
+```
+
+## How It Works
+
+1. At init, `hwloc` walks the CPU tree and builds a distance matrix between every core pair
+2. Distances are converted to steal probabilities (inverse distance, normalized to CDF)
+3. Workers pop from their own deque first, then steal from a weighted-random victim
+4. A background PMU thread polls cache miss rates every 10ms
+5. The feedback loop multiplies base distances by `(1 + normalized_miss_rate)`, penalizing victims with high miss rates
+6. Steal probabilities are rebuilt, shifting work toward cache-local, low-contention neighbours

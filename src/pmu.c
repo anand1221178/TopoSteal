@@ -104,15 +104,13 @@ void pmu_start(pmu_t *pmu)
 
 void pmu_stop(pmu_t *pmu)
 {
-    /* add destruction of pthread */
     pmu->keep_running = 0;
-
-    /* Wait for thread to safely inish last read and exit */
     pthread_join(pmu->sampler_thread, NULL);
 
     for (int i = 0; i < pmu->num_workers; i++)
     {
             ioctl(pmu->fds[i], PERF_EVENT_IOC_DISABLE, 0);
+            close(pmu->fds[i]);
     }
     printf("[TOPOSTEAL] PMU Sampler Thread stopped.\n");
 }

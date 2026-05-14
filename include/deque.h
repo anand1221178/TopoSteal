@@ -5,7 +5,6 @@
 
 #include <stdatomic.h>
 #include <stddef.h>
-#include "pmu.h"
 
 /* Task struct */
 typedef struct

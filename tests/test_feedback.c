@@ -42,10 +42,9 @@ static void print_distribution(weights_t *w, topo_t *t, const char *label) {
     printf("\n--- %s ---\n", label);
     for (int i = 0; i < t->num_cores; i++) {
         if (i == 0) { printf("  Worker 0 (self):   skipped\n"); continue; }
-        printf("  Worker %d: %d steals (%.1f%%) miss_rate=%.1f/ms\n",
+        printf("  Worker %d: %d steals (%.1f%%)\n",
             i, counts[i],
-            (float)counts[i] / trials * 100.0f,
-            pmu_get_miss_rate(NULL, i));
+            (float)counts[i] / trials * 100.0f);
     }
 }
 
