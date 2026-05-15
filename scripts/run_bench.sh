@@ -20,6 +20,8 @@ echo -e "\nCPU Info:"
 lscpu | grep -E "Socket|NUMA|Core|Thread|CPU\(s\)|Model name"
 echo -e "\nNUMA distances:"
 cat /sys/devices/system/node/node*/distance 2>/dev/null || echo "No NUMA info in sysfs"
+echo -e "\nperf_event_paranoid:"
+cat /proc/sys/kernel/perf_event_paranoid 2>/dev/null || echo "unknown"
 
 # Build hwloc from source
 HWLOC_PREFIX="$HOME/local"

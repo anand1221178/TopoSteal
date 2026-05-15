@@ -29,6 +29,7 @@ struct toposteal_t {
     int num_workers;
     _Atomic int keep_running;
     _Atomic int tasks_pending;
+    int pmu_ok;
 };
 
 static void feedback_callback(void *ctx) {
@@ -80,18 +81,21 @@ toposteal_t *toposteal_init(int num_workers) {
     // Clamp topology to the number of workers we actually have
     if (ts->topo.num_cores > num_workers)
         ts->topo.num_cores = num_workers;
-    if (pmu_init(&ts->pmu, num_workers) == -1) {
-        printf("[toposteal] WARNING: PMU init failed, running without PMU\n");
-    }
+    ts->pmu_ok = (pmu_init(&ts->pmu, num_workers) == 0);
+    if (!ts->pmu_ok)
+        printf("[toposteal] WARNING: PMU unavailable, using static topology weights\n");
+
     weights_init(&ts->weights, &ts->topo);
     feedback_init(&ts->feedback, &ts->topo, &ts->weights, &ts->pmu);
 
     for (int i = 0; i < num_workers; i++)
         deque_init(&ts->deques[i]);
 
-    ts->pmu.feedback_cb = feedback_callback;
-    ts->pmu.feedback_ctx = &ts->feedback;
-    pmu_start(&ts->pmu);
+    if (ts->pmu_ok) {
+        ts->pmu.feedback_cb = feedback_callback;
+        ts->pmu.feedback_ctx = &ts->feedback;
+        pmu_start(&ts->pmu);
+    }
 
     // Launch worker threads
     for (int i = 0; i < num_workers; i++) {
@@ -123,7 +127,8 @@ void toposteal_destroy(toposteal_t *ts) {
     atomic_store(&ts->keep_running, 0);
     for (int i = 0; i < ts->num_workers; i++)
         pthread_join(ts->threads[i], NULL);
-    pmu_stop(&ts->pmu);
+    if (ts->pmu_ok)
+        pmu_stop(&ts->pmu);
     topo_destroy();
     free(ts);
     printf("[toposteal] shutdown complete\n");

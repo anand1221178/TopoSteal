@@ -22,23 +22,16 @@ void topo_init(topo_t *t)
 	/*We need to now find the number of cores*/
 	//Hwloc represents everything as objects in a tree, so we ask hwloc for the depth of the core level in the tree, and then count how many objects exisit in that depth.
 	
-	int depth = hwloc_get_type_depth(hwloc_topo, HWLOC_OBJ_PU);
+	int depth = hwloc_get_type_depth(hwloc_topo, HWLOC_OBJ_CORE);
 	if (depth == HWLOC_TYPE_DEPTH_UNKNOWN) {
-    		depth = hwloc_get_type_depth(hwloc_topo, HWLOC_OBJ_CORE);
-    		if (depth == HWLOC_TYPE_DEPTH_UNKNOWN) {
-    			printf("[topo] WARNING: topology depth unknown, applying mock\n");
-    			t->num_cores = 4;
-    			topo_apply_mock(t);
-    			return;
-    		}
+		printf("[topo] WARNING: core depth unknown, applying mock topology\n");
+		t->num_cores = 4;
+		topo_apply_mock(t);
+		return;
 	}
 
 	t->num_cores = hwloc_get_nbobjs_by_depth(hwloc_topo, depth);
 	if (t->num_cores > TOPO_MAX_CORES) t->num_cores = TOPO_MAX_CORES;
-
-	/*Flag to catch junk hwloc calls*/
-	int mock_needed = 0;
-
 
 	/*NOw we walk the ancestors in the loop*/
 	printf("[topo] SETUP: walking hwloc tree and gathering ancestors\n");
@@ -88,17 +81,17 @@ void topo_init(topo_t *t)
 				case HWLOC_OBJ_NUMANODE:
 					t->distance[i][j] = TOPO_DIST_NUMA;
 					break;
+				case HWLOC_OBJ_MACHINE:
+				case HWLOC_OBJ_GROUP:
+					t->distance[i][j] = TOPO_DIST_NUMA;
+					break;
 				default :
-					mock_needed =1;
-					t->distance[i][j] = TOPO_DIST_PACKAGE;
+					t->distance[i][j] = TOPO_DIST_NUMA;
 					break;
 			}
 		}
 	}
-	/* If we hit weird hypervisor objects, our matrix is junk. Overwrite it. */
-    	if (mock_needed == 1) {
-        	topo_apply_mock(t);
-    	}
+	printf("[topo] detected %d cores across topology\n", t->num_cores);
 
 }
 

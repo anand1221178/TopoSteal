@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#define TOPO_MAX_CORES 64
+#define TOPO_MAX_CORES 128
 
 #define TOPO_DIST_SAME       0
 #define TOPO_DIST_CORE       1

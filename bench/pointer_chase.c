@@ -9,10 +9,10 @@
 #include "../include/toposteal.h"
 #include "../include/deque.h"
 
-#define NUM_WORKERS    8
-#define ARRAY_SIZE     (32 * 1024)
-#define CHASE_ITERS    2000000
-#define NUM_TASKS      256
+#define NUM_WORKERS    56
+#define ARRAY_SIZE     (8 * 1024 * 1024)
+#define CHASE_ITERS    500000
+#define NUM_TASKS      512
 #define TRIALS         5
 
 static size_t *chase_array;
