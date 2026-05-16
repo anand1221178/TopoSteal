@@ -1,0 +1,98 @@
+[topo] SETUP: walking hwloc tree and gathering ancestors
+[topo] detected 24 cores across topology
+[topo] cpu_map: 0→CPU0 1→CPU2 2→CPU4 3→CPU6 4→CPU8 5→CPU10 6→CPU12 7→CPU14 8→CPU16 9→CPU18 10→CPU20 11→CPU22 12→CPU1 13→CPU3 14→CPU5 15→CPU7 16→CPU9 17→CPU11 18→CPU13 19→CPU15 20→CPU17 21→CPU19 22→CPU21 23→CPU23 
+[TOPOSTEAL] PMU Sampler Thread started.
+================================================================
+  TopoSteal Tail Latency Benchmark
+================================================================
+Platform: 2x Intel Xeon E5-2690v3, 24 cores, NUMA dist 10/21
+Tasks: 4800 | Iters/task: 100000 | Producers/node: 1
+All latencies in microseconds (us)
+================================================================
+
+  Mode              Mean       p50       p90       p99     p99.9       Max  Local/Remote
+  ----              ----       ---       ---       ---     -----       ---  ------------
+
+--- Trial 1/10 ---
+  Uniform           3742         0     10355     11112     11486     11676   2169/ 2176
+  TopoStatic        3091         0      7224     11423     11810     12037   3766/  607
+  Topo+PMU          3077         0      7216     11439     11860     12312   3772/  598
+
+--- Trial 2/10 ---
+  Uniform           3742         0     10309     11143     11613     11931   2170/ 2174
+  TopoStatic        3099         0      7212     11395     11771     11977   3745/  627
+  Topo+PMU          3105         0      7265     11460     11857     12066   3753/  618
+
+--- Trial 3/10 ---
+  Uniform           3796         0      9607     10396     10816     16230   2123/ 2235
+  TopoStatic        3312         0      7955     10756     11076     13851   3769/  614
+  Topo+PMU          3301         0      8005     10633     10981     11300   3783/  602
+
+--- Trial 4/10 ---
+  Uniform           3781         0      9619     10427     10800     11010   2171/ 2208
+  TopoStatic        3286         0      7997     10721     10983     11209   3723/  664
+  Topo+PMU          3296         0      7993     10697     11021     13585   3718/  665
+
+--- Trial 5/10 ---
+  Uniform           3772         0      9597     10447     10903     16712   2192/ 2188
+  TopoStatic        3299         0      7955     10673     11216     11381   3762/  623
+  Topo+PMU          3284         0      7953     10679     11089     11228   3765/  617
+
+--- Trial 6/10 ---
+  Uniform           3781         0      9642     10467     10973     24729   2232/ 2144
+  TopoStatic        3300         0      8021     10697     11063     11223   3761/  620
+  Topo+PMU          3303         0      8021     10696     11194     15135   3752/  629
+
+--- Trial 7/10 ---
+  Uniform           3775         0      9630     10405     10748     10808   2197/ 2181
+  TopoStatic        3316         0      7921     10692     10987    172412   3733/  652
+  Topo+PMU          3434         0      8007     10740     11116    755511   3734/  652
+
+--- Trial 8/10 ---
+  Uniform           3781         0      9626     10375     10761     10860   2111/ 2271
+  TopoStatic        3286         0      7914     10800     12269     13936   3772/  613
+  Topo+PMU          3268         0      7934     10733     11052     11248   3780/  603
+
+--- Trial 9/10 ---
+  Uniform           3762         0      9728     10444     10805     11093   2147/ 2230
+  TopoStatic        3250         0      7857     10748     10977     11165   3785/  595
+  Topo+PMU          3290         0      7892     10827     11206     18292   3751/  631
+
+--- Trial 10/10 ---
+  Uniform           3743         0      9675     10440     10767     11015   2171/ 2208
+  TopoStatic        3419         0      7867     10815     11187    762910   3775/  608
+  Topo+PMU          3276         0      7857     10770     11110     16860   3774/  606
+
+================================================================
+  Cross-Socket vs Local Steal Latency Breakdown
+================================================================
+Running one final detailed trial...
+
+  UNIFORM:
+    All tasks:      p50=       0  p99=   10537  p99.9=   11252  max=   16717 us
+    Cross-socket:   p50=    9799  p99=   10830  p99.9=   16717  max=   16717 us
+    Local steals:   p50=    8318  p99=    9187  p99.9=    9840  max=    9840 us
+    Steals: 2241 local / 2135 remote
+
+  TOPOSTATIC:
+    All tasks:      p50=       0  p99=   10835  p99.9=   11248  max=   12078 us
+    Cross-socket:   p50=   10470  p99=   11292  p99.9=   11556  max=   11556 us
+    Local steals:   p50=    7447  p99=    8231  p99.9=    8451  max=   12078 us
+    Steals: 3749 local / 629 remote
+
+  TOPO+PMU:
+    All tasks:      p50=       0  p99=   10860  p99.9=   11146  max=   11322 us
+    Cross-socket:   p50=   10543  p99=   11200  p99.9=   11322  max=   11322 us
+    Local steals:   p50=    7403  p99=    8221  p99.9=    8377  max=    8378 us
+    Steals: 3773 local / 609 remote
+
+  KEY INSIGHT: Cross-socket stolen tasks have higher latency than
+  local stolen tasks. TopoSteal reduces the NUMBER of cross-socket
+  steals from ~50% to ~15%, cutting tail latency exposure.
+
+Results written to latency_results.csv
+[TOPOSTEAL] PMU Sampler Thread stopped.
+
+================================================================
+  Latency benchmark complete.
+================================================================
