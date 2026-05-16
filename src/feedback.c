@@ -44,7 +44,7 @@ void feedback_update(feedback_t *f)
             /* Gaurds */
             if (base_dist == 0) continue;
             if (effective_dist == 0.0f) continue;
-            row_sum += (1.0f / effective_dist);
+            row_sum += (1.0f / (effective_dist * effective_dist));
         }
 
         /*PASS 2 Rebuild the cumulative threshold table*/
@@ -64,7 +64,7 @@ void feedback_update(feedback_t *f)
             float effective_dist = (float)base_dist * (1.0f + penalty);
 
             // Calculate their new slice
-            float victim_piece = (1.0f / effective_dist) / row_sum;
+            float victim_piece = (1.0f / (effective_dist * effective_dist)) / row_sum;
             accumulator += victim_piece;
             f->w->steal_thresholds[i][j] = accumulator;
         }

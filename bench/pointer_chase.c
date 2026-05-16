@@ -11,6 +11,8 @@
 #include "../include/topo.h"
 #include "../include/deque.h"
 #include "../include/weights.h"
+#include "../include/pmu.h"
+#include "../include/feedback.h"
 
 #define NUM_WORKERS    24
 #define TRIALS         10
@@ -76,7 +78,7 @@ static int is_same_socket(int a, int b) {
 typedef struct {
     deque_t *queues;
     int id;
-    int use_topo;
+    int mode;  /* 0=uniform, 1=topo-static, 2=topo+pmu */
     int num_tasks;
     weights_t *weights;
     _Atomic int *tasks_done;
@@ -100,7 +102,7 @@ static void *worker_fn(void *arg) {
             continue;
         }
         int victim;
-        if (ctx->use_topo) {
+        if (ctx->mode > 0) {
             victim = weights_pick_victim(ctx->weights, ctx->id, &seed);
         } else {
             victim = rand_r(&seed) % NUM_WORKERS;
@@ -129,7 +131,7 @@ typedef struct {
     long total_own;
 } bench_result_t;
 
-static bench_result_t run_bench(int use_topo, weights_t *weights,
+static bench_result_t run_bench(int mode, weights_t *weights,
                                  chase_arg_t *args, int num_tasks,
                                  int producers_per_node) {
     deque_t queues[NUM_WORKERS];
@@ -179,7 +181,7 @@ static bench_result_t run_bench(int use_topo, weights_t *weights,
 
     for (int i = 0; i < NUM_WORKERS; i++) {
         ctxs[i] = (worker_ctx_t){
-            .queues = queues, .id = i, .use_topo = use_topo,
+            .queues = queues, .id = i, .mode = mode,
             .weights = weights, .tasks_done = &tasks_done,
             .num_tasks = num_tasks
         };
@@ -205,88 +207,142 @@ static bench_result_t run_bench(int use_topo, weights_t *weights,
     return r;
 }
 
+static void bench_feedback_cb(void *ctx) {
+    feedback_t *f = (feedback_t *)ctx;
+    feedback_update(f);
+}
+
 static void run_config(const char *label, int num_tasks, int chase_iters,
-                       int producers_per_node, weights_t *weights, FILE *csv) {
+                       int producers_per_node, weights_t *weights,
+                       pmu_t *pmu, FILE *csv) {
     chase_iters_global = chase_iters;
     chase_arg_t *args = malloc(num_tasks * sizeof(chase_arg_t));
 
-    printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+    printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
     printf("Config: %s\n", label);
     printf("  Tasks: %d | Iters/task: %d | Producers/node: %d | Trials: %d\n",
         num_tasks, chase_iters, producers_per_node, TRIALS);
-    printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+    printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
 
-    double u_times[TRIALS], t_times[TRIALS];
+    double u_times[TRIALS], t_times[TRIALS], p_times[TRIALS];
     long u_local_total = 0, u_remote_total = 0;
     long t_local_total = 0, t_remote_total = 0;
+    long p_local_total = 0, p_remote_total = 0;
+    int pmu_ok = (pmu != NULL);
+
+    /* We need a separate weights copy for PMU mode so feedback doesn't corrupt static weights */
+    weights_t pmu_weights;
+    feedback_t pmu_fb;
+    if (pmu_ok) {
+        memcpy(&pmu_weights, weights, sizeof(weights_t));
+        feedback_init(&pmu_fb, &topo, &pmu_weights, pmu);
+    }
 
     for (int trial = 0; trial < TRIALS; trial++) {
+        /* Mode 0: Uniform random */
         bench_result_t u = run_bench(0, weights, args, num_tasks, producers_per_node);
+
+        /* Mode 1: Topo-static (1/d^2, no PMU) */
         bench_result_t t = run_bench(1, weights, args, num_tasks, producers_per_node);
+
+        /* Mode 2: Topo+PMU (dynamic feedback) */
+        bench_result_t p = {0};
+        if (pmu_ok) {
+            /* Reset PMU weights to static baseline before each trial */
+            memcpy(&pmu_weights, weights, sizeof(weights_t));
+            /* Wire up feedback callback */
+            pmu->feedback_ctx = &pmu_fb;
+            pmu->feedback_cb = bench_feedback_cb;
+            p = run_bench(2, &pmu_weights, args, num_tasks, producers_per_node);
+            pmu->feedback_cb = NULL;
+        }
 
         u_times[trial] = u.time;
         t_times[trial] = t.time;
+        p_times[trial] = p.time;
         u_local_total += u.total_local_steals;
         u_remote_total += u.total_remote_steals;
         t_local_total += t.total_local_steals;
         t_remote_total += t.total_remote_steals;
+        p_local_total += p.total_local_steals;
+        p_remote_total += p.total_remote_steals;
 
-        printf("  Trial %2d:  Uniform=%6.3fs  TopoSteal=%6.3fs  Speedup=%.2fx",
-            trial + 1, u.time, t.time, u.time / t.time);
-        printf("  [U: %ld local/%ld remote | T: %ld local/%ld remote]\n",
-            u.total_local_steals, u.total_remote_steals,
-            t.total_local_steals, t.total_remote_steals);
+        if (pmu_ok) {
+            printf("  Trial %2d:  Uniform=%6.3fs  TopoStatic=%6.3fs  Topo+PMU=%6.3fs  "
+                   "Speedup=%.2fx/%.2fx\n",
+                trial + 1, u.time, t.time, p.time,
+                u.time / t.time, u.time / p.time);
+        } else {
+            printf("  Trial %2d:  Uniform=%6.3fs  TopoStatic=%6.3fs  Speedup=%.2fx\n",
+                trial + 1, u.time, t.time, u.time / t.time);
+        }
 
         if (csv) {
-            fprintf(csv, "%s,%d,%d,%d,%d,%.6f,%.6f,%.4f,%ld,%ld,%ld,%ld\n",
+            fprintf(csv, "%s,%d,%d,%d,%d,%.6f,%.6f,%.6f,%.4f,%.4f,%ld,%ld,%ld,%ld,%ld,%ld\n",
                 label, num_tasks, chase_iters, producers_per_node, trial + 1,
-                u.time, t.time, u.time / t.time,
+                u.time, t.time, pmu_ok ? p.time : 0.0,
+                u.time / t.time, pmu_ok ? u.time / p.time : 0.0,
                 u.total_local_steals, u.total_remote_steals,
-                t.total_local_steals, t.total_remote_steals);
+                t.total_local_steals, t.total_remote_steals,
+                p.total_local_steals, p.total_remote_steals);
         }
     }
 
     /* Compute statistics */
-    double u_sum = 0, t_sum = 0;
-    for (int i = 0; i < TRIALS; i++) { u_sum += u_times[i]; t_sum += t_times[i]; }
+    double u_sum = 0, t_sum = 0, p_sum = 0;
+    for (int i = 0; i < TRIALS; i++) { u_sum += u_times[i]; t_sum += t_times[i]; p_sum += p_times[i]; }
     double u_avg = u_sum / TRIALS;
     double t_avg = t_sum / TRIALS;
+    double p_avg = p_sum / TRIALS;
 
-    double u_var = 0, t_var = 0;
+    double u_var = 0, t_var = 0, p_var = 0;
     for (int i = 0; i < TRIALS; i++) {
         u_var += (u_times[i] - u_avg) * (u_times[i] - u_avg);
         t_var += (t_times[i] - t_avg) * (t_times[i] - t_avg);
+        p_var += (p_times[i] - p_avg) * (p_times[i] - p_avg);
     }
     double u_std = sqrt(u_var / TRIALS);
     double t_std = sqrt(t_var / TRIALS);
+    double p_std = sqrt(p_var / TRIALS);
 
     double u_min = u_times[0], u_max = u_times[0];
     double t_min = t_times[0], t_max = t_times[0];
+    double p_min = p_times[0], p_max = p_times[0];
     for (int i = 1; i < TRIALS; i++) {
         if (u_times[i] < u_min) u_min = u_times[i];
         if (u_times[i] > u_max) u_max = u_times[i];
         if (t_times[i] < t_min) t_min = t_times[i];
         if (t_times[i] > t_max) t_max = t_times[i];
+        if (p_times[i] < p_min) p_min = p_times[i];
+        if (p_times[i] > p_max) p_max = p_times[i];
     }
 
     long u_steals = u_local_total + u_remote_total;
     long t_steals = t_local_total + t_remote_total;
+    long p_steals = p_local_total + p_remote_total;
 
-    printf("\n  %-22s  %-12s  %-12s\n", "", "Uniform", "TopoSteal");
-    printf("  %-22s  %-12.4f  %-12.4f\n", "Mean (s):", u_avg, t_avg);
-    printf("  %-22s  %-12.4f  %-12.4f\n", "Std dev (s):", u_std, t_std);
-    printf("  %-22s  %-12.4f  %-12.4f\n", "Min (s):", u_min, t_min);
-    printf("  %-22s  %-12.4f  %-12.4f\n", "Max (s):", u_max, t_max);
-    printf("  %-22s  %-12.2f  %-12.2f\n", "Avg local steals:",
-        u_steals ? (double)u_local_total/TRIALS : 0,
-        t_steals ? (double)t_local_total/TRIALS : 0);
-    printf("  %-22s  %-12.2f  %-12.2f\n", "Avg remote steals:",
-        u_steals ? (double)u_remote_total/TRIALS : 0,
-        t_steals ? (double)t_remote_total/TRIALS : 0);
-    printf("  %-22s  %-12.1f%%  %-12.1f%%\n", "Local steal %%:",
-        u_steals ? 100.0 * u_local_total / u_steals : 0,
-        t_steals ? 100.0 * t_local_total / t_steals : 0);
-    printf("  %-22s  %.2fx\n", "SPEEDUP:", u_avg / t_avg);
+    if (pmu_ok) {
+        printf("\n  %-22s  %-12s  %-12s  %-12s\n", "", "Uniform", "TopoStatic", "Topo+PMU");
+        printf("  %-22s  %-12.4f  %-12.4f  %-12.4f\n", "Mean (s):", u_avg, t_avg, p_avg);
+        printf("  %-22s  %-12.4f  %-12.4f  %-12.4f\n", "Std dev (s):", u_std, t_std, p_std);
+        printf("  %-22s  %-12.4f  %-12.4f  %-12.4f\n", "Min (s):", u_min, t_min, p_min);
+        printf("  %-22s  %-12.4f  %-12.4f  %-12.4f\n", "Max (s):", u_max, t_max, p_max);
+        printf("  %-22s  %-12.1f%%  %-12.1f%%  %-12.1f%%\n", "Local steal %:",
+            u_steals ? 100.0 * u_local_total / u_steals : 0,
+            t_steals ? 100.0 * t_local_total / t_steals : 0,
+            p_steals ? 100.0 * p_local_total / p_steals : 0);
+        printf("  %-22s  %.2fx        %.2fx\n", "SPEEDUP:", u_avg / t_avg, u_avg / p_avg);
+    } else {
+        printf("\n  %-22s  %-12s  %-12s\n", "", "Uniform", "TopoStatic");
+        printf("  %-22s  %-12.4f  %-12.4f\n", "Mean (s):", u_avg, t_avg);
+        printf("  %-22s  %-12.4f  %-12.4f\n", "Std dev (s):", u_std, t_std);
+        printf("  %-22s  %-12.4f  %-12.4f\n", "Min (s):", u_min, t_min);
+        printf("  %-22s  %-12.4f  %-12.4f\n", "Max (s):", u_max, t_max);
+        printf("  %-22s  %-12.1f%%  %-12.1f%%\n", "Local steal %:",
+            u_steals ? 100.0 * u_local_total / u_steals : 0,
+            t_steals ? 100.0 * t_local_total / t_steals : 0);
+        printf("  %-22s  %.2fx\n", "SPEEDUP:", u_avg / t_avg);
+    }
     printf("\n");
 
     free(args);
@@ -299,6 +355,18 @@ int main() {
 
     weights_t weights;
     weights_init(&weights, &topo);
+
+    /* Init PMU for dynamic feedback mode */
+    pmu_t pmu;
+    int pmu_ok = (pmu_init(&pmu, NUM_WORKERS, topo.cpu_map) == 0);
+    if (pmu_ok) {
+        pmu.feedback_cb = NULL;
+        pmu.feedback_ctx = NULL;
+        pmu_start(&pmu);
+        printf("[bench] PMU started — dynamic feedback enabled\n");
+    } else {
+        printf("[bench] PMU unavailable — running without dynamic feedback\n");
+    }
 
     size_t array_bytes = 8 * 1024 * 1024 * sizeof(size_t);
 
@@ -325,6 +393,7 @@ int main() {
     printf("Platform: 2x Intel Xeon E5-2690v3, 24 cores, NUMA dist 10/21\n");
     printf("Array: 2x 64 MB (per NUMA node, exceeds 30MB L3 -> DRAM-bound)\n");
     printf("Weight function: 1/dist^2 (aggressive same-socket preference)\n");
+    printf("Modes: Uniform | TopoStatic (1/d^2) | Topo+PMU (dynamic feedback)\n");
     printf("Workers: %d pinned via hwloc cpu_map\n", NUM_WORKERS);
     printf("Trials per config: %d\n", TRIALS);
     printf("================================================================\n\n");
@@ -336,34 +405,41 @@ int main() {
     FILE *csv = fopen("bench_results.csv", "w");
     if (csv) {
         fprintf(csv, "config,tasks,iters,producers_per_node,trial,"
-                     "uniform_s,toposteal_s,speedup,"
-                     "u_local_steals,u_remote_steals,t_local_steals,t_remote_steals\n");
+                     "uniform_s,topostatic_s,topopmu_s,static_speedup,pmu_speedup,"
+                     "u_local_steals,u_remote_steals,"
+                     "t_local_steals,t_remote_steals,"
+                     "p_local_steals,p_remote_steals\n");
     }
+
+    pmu_t *pmu_ptr = pmu_ok ? &pmu : NULL;
 
     /* Config 1: Heavy imbalance, long tasks */
     run_config("heavy-imbalance-long",
-        1200, 2000000, 2, &weights, csv);
+        1200, 2000000, 2, &weights, pmu_ptr, csv);
 
     /* Config 2: Heavy imbalance, medium tasks */
     run_config("heavy-imbalance-med",
-        1200, 1000000, 2, &weights, csv);
+        1200, 1000000, 2, &weights, pmu_ptr, csv);
 
     /* Config 3: Moderate imbalance, long tasks */
     run_config("moderate-imbalance-long",
-        1200, 2000000, 4, &weights, csv);
+        1200, 2000000, 4, &weights, pmu_ptr, csv);
 
     /* Config 4: Many short tasks, heavy imbalance */
     run_config("many-short-tasks",
-        2400, 500000, 2, &weights, csv);
+        2400, 500000, 2, &weights, pmu_ptr, csv);
 
     /* Config 5: Extreme imbalance (1 producer per node) */
     run_config("extreme-imbalance",
-        1200, 1000000, 1, &weights, csv);
+        1200, 1000000, 1, &weights, pmu_ptr, csv);
 
     if (csv) {
         fclose(csv);
         printf("Results written to bench_results.csv\n");
     }
+
+    if (pmu_ok)
+        pmu_stop(&pmu);
 
     printf("================================================================\n");
     printf("  Benchmark complete.\n");

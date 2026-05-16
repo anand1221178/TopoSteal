@@ -56,7 +56,7 @@ int main() {
 
     // Init all components
     topo_init(&t);
-    if (pmu_init(&p, t.num_cores) == -1) {
+    if (pmu_init(&p, t.num_cores, t.cpu_map) == -1) {
         printf("[test] PMU init failed\n");
         return -1;
     }

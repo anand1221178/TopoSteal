@@ -41,7 +41,7 @@ int main() {
     pmu_t pmu;
     
     //Init with 4 workers
-    if (pmu_init(&pmu, 4) == -1) {
+    if (pmu_init(&pmu, 4, NULL) == -1) {
         printf("[test] PMU failed to initialize. Exiting.\n");
         return -1;
     }

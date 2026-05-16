@@ -82,7 +82,7 @@ toposteal_t *toposteal_init(int num_workers) {
     // Clamp topology to the number of workers we actually have
     if (ts->topo.num_cores > num_workers)
         ts->topo.num_cores = num_workers;
-    ts->pmu_ok = (pmu_init(&ts->pmu, num_workers) == 0);
+    ts->pmu_ok = (pmu_init(&ts->pmu, num_workers, ts->topo.cpu_map) == 0);
     if (!ts->pmu_ok)
         printf("[toposteal] WARNING: PMU unavailable, using static topology weights\n");
 

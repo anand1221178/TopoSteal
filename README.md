@@ -106,8 +106,9 @@ scripts/       Cluster job scripts (PBS)
 ## How It Works
 
 1. At init, `hwloc` walks the CPU tree and builds a distance matrix between every core pair
-2. Distances are converted to steal probabilities using inverse-square weighting ($w_{ij} = 1/d_{ij}^2$), normalized to a CDF
+2. Distances are converted to steal probabilities using inverse-square weighting (w = 1/d^2), normalized to a CDF
 3. Workers pop from their own deque first, then steal from a weighted-random victim
-4. A background PMU thread polls cache miss rates every 10ms
-5. The feedback loop multiplies base distances by `(1 + normalized_miss_rate)`, penalizing victims with high miss rates
-6. Steal probabilities are rebuilt, shifting work toward cache-local, low-contention neighbours
+4. **(Optional, library mode)** A background PMU thread polls cache miss rates every 10ms via `perf_event_open`
+5. **(Optional, library mode)** The feedback loop multiplies base distances by `(1 + normalized_miss_rate)`, penalizing victims with high miss rates, and rebuilds steal probabilities dynamically
+
+The benchmark results above use static topology weights only (steps 1-3) to isolate the effect of topology-aware victim selection. The PMU feedback (steps 4-5) is implemented in the library and activated when using the `toposteal_init` API directly.

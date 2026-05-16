@@ -28,7 +28,7 @@ typedef struct
 
 /* Function declares */
 /* init */
-int pmu_init(pmu_t *pmu, uint32_t num_workers);
+int pmu_init(pmu_t *pmu, uint32_t num_workers, int *cpu_map);
 /* start pmu */
 void pmu_start(pmu_t *pmu);
 /* Stop pmu */

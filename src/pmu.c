@@ -7,7 +7,7 @@
 #include <stdio.h>
 
 
-int pmu_init(pmu_t *pmu, uint32_t num_workers)
+int pmu_init(pmu_t *pmu, uint32_t num_workers, int *cpu_map)
 {
     /* Clear struct with memset */
     memset(pmu, 0, sizeof(*pmu));
@@ -28,7 +28,8 @@ int pmu_init(pmu_t *pmu, uint32_t num_workers)
 
     for (int i =0 ; i< num_workers; i ++)
     {
-        int fd = syscall(SYS_perf_event_open, &attr, 0, i, -1, 0);
+        int cpu = cpu_map ? cpu_map[i] : i;
+        int fd = syscall(SYS_perf_event_open, &attr, 0, cpu, -1, 0);
         
         /* Check for failure */
         if (fd == -1)
@@ -39,7 +40,7 @@ int pmu_init(pmu_t *pmu, uint32_t num_workers)
             attr.config = PERF_COUNT_SW_PAGE_FAULTS;
             /* Retry with software mode */
             /* If still fails then total failure */
-            int fd_retry = syscall(SYS_perf_event_open, &attr, 0, i, -1, 0);
+            int fd_retry = syscall(SYS_perf_event_open, &attr, 0, cpu, -1, 0);
             if (fd_retry == -1)
             {
                 printf("[TOPOSTEAL] Warning file descriptors failed to launch!");
