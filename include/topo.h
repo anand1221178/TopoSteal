@@ -16,6 +16,7 @@ typedef struct
 {
 	int num_cores;
 	int distance[TOPO_MAX_CORES][TOPO_MAX_CORES];
+	int cpu_map[TOPO_MAX_CORES];
 }topo_t;
 
 void topo_init(topo_t *t);

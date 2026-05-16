@@ -46,7 +46,8 @@ static void *worker_thread(void *arg) {
 
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
-    CPU_SET(id, &cpuset);
+    int phys_cpu = ts->topo.cpu_map[id];
+    CPU_SET(phys_cpu, &cpuset);
     pthread_setaffinity_np(pthread_self(), sizeof(cpuset), &cpuset);
 
     while (atomic_load(&ts->keep_running)) {

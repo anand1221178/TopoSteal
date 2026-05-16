@@ -33,6 +33,16 @@ void topo_init(topo_t *t)
 	t->num_cores = hwloc_get_nbobjs_by_depth(hwloc_topo, depth);
 	if (t->num_cores > TOPO_MAX_CORES) t->num_cores = TOPO_MAX_CORES;
 
+	/* Build cpu_map: logical core index -> physical CPU ID */
+	for (int i = 0; i < t->num_cores; i++) {
+		hwloc_obj_t core = hwloc_get_obj_by_depth(hwloc_topo, depth, i);
+		hwloc_obj_t pu = NULL;
+		if (core) {
+			pu = hwloc_get_obj_inside_cpuset_by_type(hwloc_topo, core->cpuset, HWLOC_OBJ_PU, 0);
+		}
+		t->cpu_map[i] = (pu) ? (int)pu->os_index : i;
+	}
+
 	/*NOw we walk the ancestors in the loop*/
 	printf("[topo] SETUP: walking hwloc tree and gathering ancestors\n");
 	for(int i =0; i < t->num_cores; ++i)
@@ -92,6 +102,10 @@ void topo_init(topo_t *t)
 		}
 	}
 	printf("[topo] detected %d cores across topology\n", t->num_cores);
+	printf("[topo] cpu_map: ");
+	for (int i = 0; i < t->num_cores; i++)
+		printf("%d→CPU%d ", i, t->cpu_map[i]);
+	printf("\n");
 
 }
 
@@ -99,6 +113,8 @@ void topo_apply_mock(topo_t *t)
 {
 	/**Warn user that we are using mock topology*/
 	printf("[topo] WARNING: using a mock topology!\n");
+	for (int i = 0; i < t->num_cores; i++)
+		t->cpu_map[i] = i;
 	for(int i = 0; i < t->num_cores; i++)
 	{
 		for(int j = 0; j < t->num_cores; j++)

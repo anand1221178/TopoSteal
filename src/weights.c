@@ -15,7 +15,7 @@ void weights_init(weights_t *w, topo_t *t)
             {
                 int dist = topo_get_distance(t, i, j);
                 if (dist == 0) continue;
-                row_sum += (1.0f/dist);
+                row_sum += 1.0f / ((float)dist * dist);
             }
         }
 
@@ -29,7 +29,7 @@ void weights_init(weights_t *w, topo_t *t)
             }
             int dist = topo_get_distance(t,i,j);
             
-            float victim_piece = (1.0f/dist)/row_sum;
+            float victim_piece = (1.0f / ((float)dist * dist)) / row_sum;
 
             accumalator += victim_piece;
             w->steal_thresholds[i][j] = accumalator;

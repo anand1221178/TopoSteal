@@ -1,6 +1,6 @@
 #!/bin/bash
 #PBS -N toposteal_bench
-#PBS -l select=1:ncpus=48:mpiprocs=1
+#PBS -l select=1:ncpus=24:mpiprocs=1
 #PBS -P DEVL1048
 #PBS -q smp
 #PBS -l walltime=0:30:00

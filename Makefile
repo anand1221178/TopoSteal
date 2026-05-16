@@ -1,6 +1,6 @@
 CC      = gcc
 CFLAGS  = -Wall -Wextra -O2 -I include
-LDFLAGS = -lhwloc -lpthread
+LDFLAGS = -lhwloc -lpthread -lm
 
 SRCS = src/topo.c src/pmu.c src/deque.c src/weights.c src/feedback.c src/toposteal.c
 OBJS = $(SRCS:.c=.o)
