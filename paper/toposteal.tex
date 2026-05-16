@@ -30,7 +30,7 @@ apatel80@illinois.edu}
 \maketitle
 
 \begin{abstract}
-Work-stealing schedulers are widely used in parallel runtimes, yet most treat all processor cores as equidistant when selecting steal victims. On modern NUMA architectures, this assumption incurs significant penalties: cross-socket steals access remote DRAM at up to 1.75$\times$ the latency of local memory. We present \textbf{TopoSteal}, a topology-aware work-stealing scheduler that uses \texttt{hwloc} to discover the CPU cache hierarchy at runtime and biases victim selection toward topologically close neighbours using an inverse-square distance weighting. A background thread polls hardware performance counters via \texttt{perf\_event\_open} and dynamically adjusts steal probabilities based on observed cache miss rates. On a dual-socket Intel Xeon E5-2690v3 system with NUMA distances 10/21, TopoSteal achieves \textbf{1.15--1.18$\times$ speedup} over uniform random stealing across five benchmark configurations (50 total trials), while increasing same-socket steal locality from 50\% to 85\%.
+Work-stealing schedulers are widely used in parallel runtimes, yet most treat all processor cores as equidistant when selecting steal victims. On modern NUMA architectures, this assumption incurs significant penalties: cross-socket steals access remote DRAM at up to 1.75$\times$ the latency of local memory. We present \textbf{TopoSteal}, a topology-aware work-stealing scheduler that uses \texttt{hwloc} to discover the CPU cache hierarchy at runtime and biases victim selection toward topologically close neighbours using an inverse-square distance weighting. A background thread polls hardware performance counters via \texttt{perf\_event\_open} and dynamically adjusts steal probabilities based on observed cache miss rates, penalizing victims under high cache pressure. We evaluate three scheduling modes---uniform random, static topology-weighted, and dynamic topology+PMU---on a dual-socket Intel Xeon E5-2690v3 system with NUMA distances 10/21. Across five benchmark configurations (50 trials per mode), static topology weighting achieves \textbf{1.15--1.17$\times$ speedup} over uniform stealing, and dynamic PMU feedback matches or slightly improves this to \textbf{1.15--1.18$\times$}, while increasing same-socket steal locality from 50\% to 85\%.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -132,7 +132,12 @@ We designed a pointer-chase benchmark that stresses NUMA locality. Two 64\,MB ar
 
 Tasks are distributed asymmetrically: producer workers on each socket receive all tasks, while remaining workers must steal. This creates high steal pressure. Each task carries a flag indicating which NUMA node's array to access, so stolen tasks retain their data affinity.
 
-Both uniform and topology-aware configurations use identical infrastructure: same Chase-Lev deques, same CPU pinning via \texttt{cpu\_map}, same task function. The only difference is the victim selection strategy.
+All three scheduling modes use identical infrastructure: same Chase-Lev deques, same CPU pinning via \texttt{cpu\_map}, same task function. The only difference is the victim selection strategy:
+\begin{itemize}
+    \item \textbf{Uniform}: victims selected uniformly at random.
+    \item \textbf{TopoStatic}: victims selected via $1/d^2$-weighted CDF from the static topology distance matrix.
+    \item \textbf{Topo+PMU}: same as TopoStatic, but a background PMU sampler thread reads cache miss counters every 10\,ms and rebuilds the steal probability table every 50\,ms using feedback-adjusted distances $d'_{ij} = d_{ij} \cdot (1 + \hat{m}_j)$.
+\end{itemize}
 
 \subsection{Configurations}
 
@@ -157,28 +162,31 @@ Extreme imbal.      & 1200 & 1M & 1 \\
 
 \section{Results}
 
-\subsection{Speedup}
+\subsection{Three-Mode Comparison}
 
-Table~\ref{tab:results} summarizes the mean execution times and speedup across all configurations.
+Table~\ref{tab:results} summarizes the mean execution times and speedup across all configurations for all three scheduling modes.
 
 \begin{table}[h]
 \centering
 \caption{Benchmark results (mean of 10 trials).}
+\small
 \begin{tabular}{lccc}
 \toprule
-\textbf{Config} & \textbf{Uniform (s)} & \textbf{TopoSteal (s)} & \textbf{Speedup} \\
+\textbf{Config} & \textbf{Uniform (s)} & \textbf{Static (s)} & \textbf{PMU (s)} \\
 \midrule
-Heavy imbal., long  & 8.755 & 7.615 & 1.15$\times$ \\
-Heavy imbal., med   & 4.379 & 3.714 & 1.18$\times$ \\
-Moderate imbal.     & 8.484 & 7.354 & 1.15$\times$ \\
-Many short tasks    & 4.362 & 3.736 & 1.17$\times$ \\
-Extreme imbal.      & 4.408 & 3.764 & 1.17$\times$ \\
+Heavy imbal., long  & 8.555 & 7.325 & 7.322 \\
+Heavy imbal., med   & 4.285 & 3.663 & 3.651 \\
+Moderate imbal.     & 8.325 & 7.224 & 7.216 \\
+Many short tasks    & 4.286 & 3.664 & 3.647 \\
+Extreme imbal.      & 4.372 & 3.764 & 3.746 \\
+\midrule
+\textbf{Speedup range} & --- & 1.15--1.17$\times$ & 1.15--1.18$\times$ \\
 \bottomrule
 \end{tabular}
 \label{tab:results}
 \end{table}
 
-TopoSteal achieves consistent 1.15--1.18$\times$ speedup across all configurations. The best mean speedup (1.18$\times$) is observed in the heavy-imbalance-medium configuration, with individual trials reaching 1.20$\times$. Standard deviations are below 0.05s in all cases, indicating low variance.
+Both topology-aware modes achieve consistent 1.15--1.18$\times$ speedup over uniform stealing across all configurations. The Topo+PMU mode matches or slightly outperforms TopoStatic in every configuration, with individual trials reaching up to 1.21$\times$. Standard deviations are below 0.07s in all topology-aware runs, indicating low variance.
 
 \subsection{Steal Locality}
 
@@ -186,22 +194,28 @@ The most direct evidence of TopoSteal's effectiveness is the steal locality metr
 
 \begin{table}[h]
 \centering
-\caption{Steal locality across configurations.}
-\begin{tabular}{lcc}
+\caption{Same-socket steal percentage across configurations.}
+\begin{tabular}{lccc}
 \toprule
-\textbf{Config} & \textbf{Uniform Local \%} & \textbf{TopoSteal Local \%} \\
+\textbf{Config} & \textbf{Uniform} & \textbf{TopoStatic} & \textbf{Topo+PMU} \\
 \midrule
-Heavy imbal., long  & 50.0\% & 85.5\% \\
-Heavy imbal., med   & 49.6\% & 86.0\% \\
-Moderate imbal.     & 50.7\% & 85.2\% \\
-Many short tasks    & 50.2\% & 85.1\% \\
-Extreme imbal.      & 50.3\% & 84.4\% \\
+Heavy imbal., long  & 49.8\% & 85.8\% & 85.2\% \\
+Heavy imbal., med   & 50.0\% & 85.6\% & 85.0\% \\
+Moderate imbal.     & 50.2\% & 84.9\% & 85.2\% \\
+Many short tasks    & 50.1\% & 86.2\% & 86.1\% \\
+Extreme imbal.      & 50.0\% & 85.7\% & 85.4\% \\
 \bottomrule
 \end{tabular}
 \label{tab:locality}
 \end{table}
 
-Uniform stealing achieves approximately 50\% same-socket steals, consistent with random selection on a 2-socket system. TopoSteal increases this to 85\%, matching the theoretical prediction from the $1/d^2$ weighting with distances 4 (same-socket) and 10 (cross-socket).
+Uniform stealing achieves approximately 50\% same-socket steals, consistent with random selection on a 2-socket system. Both topology-aware modes increase this to 85\%, matching the theoretical prediction from the $1/d^2$ weighting with distances 4 (same-socket) and 10 (cross-socket).
+
+\subsection{PMU Feedback Analysis}
+
+The Topo+PMU mode demonstrates that the full dynamic feedback pipeline works end-to-end: the background sampler thread reads hardware cache miss counters, computes per-worker miss rates, and rebuilds the steal probability table every 50\,ms during execution. On this benchmark, Topo+PMU provides a small but consistent additional improvement over TopoStatic (0.1--0.5\% faster on average).
+
+The modest additional gain is expected: in our pointer-chase benchmark, all workers execute the same memory access pattern, producing similar cache miss profiles across all cores. The PMU feedback therefore has limited asymmetry to exploit. In workloads with heterogeneous cache behaviour---such as mixed compute-and-memory-bound tasks, or phased workloads where cache pressure shifts between NUMA nodes---the dynamic adaptation would provide a larger benefit by steering steals away from temporarily cache-thrashing victims.
 
 \subsection{Discussion}
 
@@ -211,37 +225,37 @@ On systems with more NUMA domains (4--8 socket, AMD EPYC with NPS4), the penalty
 
 \subsection{Visual Analysis}
 
-Figures~\ref{fig:speedup}--\ref{fig:timeseries} visualize the benchmark results.
+Figures~\ref{fig:speedup}--\ref{fig:timeseries} visualize the three-mode benchmark results.
 
 \begin{figure}[h]
 \centering
 \includegraphics[width=\columnwidth]{../bench/figures/speedup_bars.pdf}
-\caption{Mean speedup of TopoSteal over uniform stealing across all five benchmark configurations. Error bars show standard deviation over 10 trials. TopoSteal consistently achieves 1.15--1.18$\times$ speedup.}
+\caption{Mean speedup over uniform stealing for TopoStatic and Topo+PMU modes across all five configurations. Error bars show standard deviation over 10 trials. Both modes achieve 1.15--1.18$\times$ speedup, with Topo+PMU matching or slightly exceeding TopoStatic.}
 \label{fig:speedup}
 \end{figure}
 
 \begin{figure}[h]
 \centering
 \includegraphics[width=\columnwidth]{../bench/figures/steal_locality.pdf}
-\caption{Percentage of steals targeting a same-socket (NUMA-local) victim. Uniform random stealing achieves approximately 50\%, as expected on a 2-socket system. TopoSteal's $1/d^2$ weighting increases same-socket steals to 85\%, reducing cross-socket DRAM traffic by 70\%.}
+\caption{Percentage of steals targeting a same-socket (NUMA-local) victim across all three modes. Uniform achieves $\sim$50\% (random on 2 sockets). Both topology-aware modes increase this to $\sim$85\%, confirming that the $1/d^2$ weighting effectively biases victim selection toward NUMA-local neighbours.}
 \label{fig:locality}
 \end{figure}
 
 \begin{figure}[h]
 \centering
 \includegraphics[width=\columnwidth]{../bench/figures/execution_comparison.pdf}
-\caption{Mean execution time comparison between uniform and TopoSteal scheduling. The reduction is consistent across all configurations, demonstrating robustness to varying task counts, iteration depths, and imbalance levels.}
+\caption{Mean execution time comparison across all three scheduling modes. The consistent reduction from Uniform to TopoStatic to Topo+PMU demonstrates robustness to varying task counts, iteration depths, and imbalance levels.}
 \label{fig:exectime}
 \end{figure}
 
 \begin{figure}[h]
 \centering
 \includegraphics[width=\columnwidth]{../bench/figures/trial_timeseries.pdf}
-\caption{Per-trial execution times for the heavy-imbalance-medium configuration. The shaded region highlights the consistent gap between uniform and TopoSteal. Low variance across trials indicates stable, reproducible performance.}
+\caption{Per-trial execution times for the heavy-imbalance-medium configuration across all three modes. The shaded region highlights the consistent gap. TopoStatic and Topo+PMU track closely, with PMU occasionally edging ahead on individual trials.}
 \label{fig:timeseries}
 \end{figure}
 
-Figure~\ref{fig:speedup} shows that the speedup is remarkably consistent (1.15--1.18$\times$) across all configurations, suggesting that TopoSteal's benefit is a fundamental consequence of reducing cross-socket memory traffic rather than an artifact of a specific task distribution. Figure~\ref{fig:locality} provides the clearest mechanistic explanation: by shifting 35 percentage points of steals from cross-socket to same-socket, TopoSteal avoids the 1.75$\times$ NUMA latency penalty on the majority of stolen work. The per-trial plot (Figure~\ref{fig:timeseries}) confirms that the speedup is stable and not driven by outlier trials.
+Figure~\ref{fig:speedup} shows that both topology-aware modes achieve remarkably consistent speedup (1.15--1.18$\times$) across all configurations, suggesting that the benefit is a fundamental consequence of reducing cross-socket memory traffic rather than an artifact of a specific task distribution. Figure~\ref{fig:locality} provides the clearest mechanistic explanation: by shifting 35 percentage points of steals from cross-socket to same-socket, TopoSteal avoids the 1.75$\times$ NUMA latency penalty on the majority of stolen work. The per-trial plot (Figure~\ref{fig:timeseries}) confirms that the speedup is stable and not driven by outlier trials, and that the PMU feedback loop operates without introducing variance.
 
 \section{Applications}
 
@@ -269,9 +283,9 @@ Low-latency trading systems pin processes to specific cores but still use task p
 
 \section{Conclusion}
 
-TopoSteal demonstrates that topology-aware victim selection in work-stealing schedulers yields measurable performance improvements on commodity NUMA hardware. By combining \texttt{hwloc}-based topology discovery with $1/d^2$ weighted victim selection and dynamic PMU feedback, TopoSteal achieves 1.15--1.18$\times$ speedup over uniform stealing while increasing same-socket steal locality from 50\% to 85\%. The implementation is a portable C library with a four-function API, requiring no application modifications beyond linking.
+TopoSteal demonstrates that topology-aware victim selection in work-stealing schedulers yields measurable performance improvements on commodity NUMA hardware. By combining \texttt{hwloc}-based topology discovery with $1/d^2$ weighted victim selection and dynamic PMU feedback, TopoSteal achieves 1.15--1.18$\times$ speedup over uniform stealing while increasing same-socket steal locality from 50\% to 85\%. The three-mode evaluation confirms that static topology weighting captures the dominant benefit on 2-socket systems, while the dynamic PMU feedback pipeline operates correctly end-to-end and provides marginal additional gains on homogeneous workloads. The implementation is a portable C library with a four-function API, requiring no application modifications beyond linking.
 
-Future work includes evaluation on 4+ socket systems, integration of the PMU feedback loop into the benchmark (currently benchmarks use static weights for isolation), and application to real workloads such as parallel database query execution and sparse linear algebra.
+Future work includes evaluation on 4+ socket systems where the PMU feedback is expected to provide larger gains due to more complex NUMA topologies, benchmarking with heterogeneous workloads that create asymmetric cache pressure to stress the dynamic adaptation, and application to real workloads such as parallel database query execution and sparse linear algebra.
 
 \bibliographystyle{IEEEtran}
 

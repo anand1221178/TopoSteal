@@ -68,19 +68,19 @@ Stress test: 4 workers, 10 seconds continuous push/pop/steal, 81M+ tasks, zero t
 
 ### Performance (Dual-Socket NUMA)
 
-Benchmarked on a dual-socket Intel Xeon E5-2690v3 (24 cores, NUMA distances 10/21) from the CHPC Lengau cluster. Pointer-chase benchmark with 64 MB per-NUMA arrays exceeding L3 cache (30 MB), asymmetric task placement to force cross-socket stealing. 10 trials per configuration.
+Benchmarked on a dual-socket Intel Xeon E5-2690v3 (24 cores, NUMA distances 10/21) from the CHPC Lengau cluster. Pointer-chase benchmark with 64 MB per-NUMA arrays exceeding L3 cache (30 MB), asymmetric task placement to force cross-socket stealing. Three scheduling modes compared: Uniform, TopoStatic (1/d^2 weights), and Topo+PMU (dynamic feedback). 10 trials per configuration.
 
-| Configuration | Uniform (s) | TopoSteal (s) | Speedup |
-|---|---|---|---|
-| Heavy imbalance, long (1200 tasks, 2M iters) | 8.755 | 7.615 | **1.15x** |
-| Heavy imbalance, med (1200 tasks, 1M iters) | 4.379 | 3.714 | **1.18x** |
-| Moderate imbalance (1200 tasks, 2M iters, 4 prod) | 8.484 | 7.354 | **1.15x** |
-| Many short tasks (2400 tasks, 500K iters) | 4.362 | 3.736 | **1.17x** |
-| Extreme imbalance (1200 tasks, 1M iters, 1 prod) | 4.408 | 3.764 | **1.17x** |
+| Configuration | Uniform (s) | TopoStatic (s) | Topo+PMU (s) | Speedup (Static / PMU) |
+|---|---|---|---|---|
+| Heavy imbal., long (1200 tasks, 2M iters) | 8.555 | 7.325 | 7.322 | **1.17x / 1.17x** |
+| Heavy imbal., med (1200 tasks, 1M iters) | 4.285 | 3.663 | 3.651 | **1.17x / 1.17x** |
+| Moderate imbal. (1200 tasks, 2M iters, 4 prod) | 8.325 | 7.224 | 7.216 | **1.15x / 1.15x** |
+| Many short tasks (2400 tasks, 500K iters) | 4.286 | 3.664 | 3.647 | **1.17x / 1.18x** |
+| Extreme imbal. (1200 tasks, 1M iters, 1 prod) | 4.372 | 3.764 | 3.746 | **1.16x / 1.17x** |
 
-**Steal locality:** Uniform stealing achieves ~50% same-socket steals (random on 2 sockets). TopoSteal increases this to **85%**, reducing cross-socket DRAM traffic significantly.
+**Steal locality:** Uniform ~50% same-socket steals. Both topology-aware modes achieve **~85%** same-socket steals.
 
-The 15-18% speedup is consistent with the NUMA latency ratio (~1.75x remote vs local) and the fraction of work that is stolen vs self-processed. Larger gains are expected on 4+ socket systems where the random-steal penalty grows quadratically.
+**PMU feedback:** The dynamic PMU mode matches or slightly outperforms static topology weights. On this homogeneous workload, the PMU has limited asymmetry to exploit. Larger gains are expected on heterogeneous workloads and 4+ socket systems.
 
 ## API
 
@@ -108,7 +108,7 @@ scripts/       Cluster job scripts (PBS)
 1. At init, `hwloc` walks the CPU tree and builds a distance matrix between every core pair
 2. Distances are converted to steal probabilities using inverse-square weighting (w = 1/d^2), normalized to a CDF
 3. Workers pop from their own deque first, then steal from a weighted-random victim
-4. **(Optional, library mode)** A background PMU thread polls cache miss rates every 10ms via `perf_event_open`
-5. **(Optional, library mode)** The feedback loop multiplies base distances by `(1 + normalized_miss_rate)`, penalizing victims with high miss rates, and rebuilds steal probabilities dynamically
+4. A background PMU thread polls cache miss rates every 10ms via `perf_event_open`
+5. The feedback loop multiplies base distances by `(1 + normalized_miss_rate)`, penalizing victims with high miss rates, and rebuilds steal probabilities every 50ms
 
-The benchmark results above use static topology weights only (steps 1-3) to isolate the effect of topology-aware victim selection. The PMU feedback (steps 4-5) is implemented in the library and activated when using the `toposteal_init` API directly.
+The benchmark evaluates all three modes: uniform (baseline), topology-static (steps 1-3), and topology+PMU (steps 1-5).
