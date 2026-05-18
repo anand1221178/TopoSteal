@@ -7,7 +7,7 @@ OBJS = $(SRCS:.c=.o)
 
 LIB_STATIC = libtoposteal.a
 
-all: $(LIB_STATIC) parallel_sum bench_pointer_chase bench_latency bench_spmv deque_stress
+all: $(LIB_STATIC) parallel_sum bench_pointer_chase bench_latency bench_spmv bench_graph500 deque_stress
 
 $(LIB_STATIC): $(OBJS)
 	ar rcs $@ $^
@@ -25,6 +25,9 @@ bench_latency: bench/latency_bench.c $(LIB_STATIC)
 	$(CC) $(CFLAGS) $< -L. -ltoposteal $(LDFLAGS) -o $@
 
 bench_spmv: bench/spmv_bench.c $(LIB_STATIC)
+	$(CC) $(CFLAGS) -fopenmp $< -L. -ltoposteal $(LDFLAGS) -o $@
+
+bench_graph500: bench/graph500_bfs.c $(LIB_STATIC)
 	$(CC) $(CFLAGS) -fopenmp $< -L. -ltoposteal $(LDFLAGS) -o $@
 
 deque_stress: tests/deque_stress.c $(LIB_STATIC)
@@ -51,7 +54,7 @@ test: test_topo test_deque test_weights test_feedback deque_stress
 	sudo ./deque_stress
 
 clean:
-	rm -f src/*.o $(LIB_STATIC) parallel_sum bench_pointer_chase bench_latency bench_spmv deque_stress
+	rm -f src/*.o $(LIB_STATIC) parallel_sum bench_pointer_chase bench_latency bench_spmv bench_graph500 deque_stress
 	rm -f test_topo test_deque test_weights test_feedback
 
 .PHONY: all test clean
