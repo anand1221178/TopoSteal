@@ -171,11 +171,12 @@ static int is_same_socket(int a, int b) {
     return topo.distance[a][b] < TOPO_DIST_NUMA;
 }
 
+static _Atomic int keep_running;
+
 typedef struct {
     int id;
     int mode;
     weights_t *weights;
-    int total_reps;
 } worker_ctx_t;
 
 static void *worker_fn(void *arg) {
@@ -188,8 +189,9 @@ static void *worker_fn(void *arg) {
     CPU_SET(topo.cpu_map[ctx->id], &cpuset);
     pthread_setaffinity_np(pthread_self(), sizeof(cpuset), &cpuset);
 
-    for (int rep = 0; rep < ctx->total_reps; rep++) {
+    while (1) {
         pthread_barrier_wait(&bar_start);
+        if (!atomic_load(&keep_running)) break;
 
         while (atomic_load(&bfs_tasks_done) < bfs_ntasks) {
             if (deque_pop(&bfs_queues[ctx->id], &task)) {
@@ -248,56 +250,15 @@ static bfs_result_t run_bfs_toposteal(csr_graph_t *g, long root, int mode,
         atomic_store(&remote_steals[i], 0);
     }
 
-    /* Seed frontier with root */
     frontier_in[0] = root;
     long frontier_size = 1;
     int level = 1;
     long total_edges = 0;
 
-    /* Pre-allocate task array */
     bfs_task_t *tasks = malloc(MAX_TASKS_PER_LEVEL * sizeof(bfs_task_t));
 
-    /* Count total BFS levels first to tell workers how many reps */
-    /* We can't know in advance, so we do BFS iteratively from main thread,
-       using barriers to dispatch each level as one "rep" */
-
-    /* Actually, we need a different approach: run BFS level-by-level,
-       each level = one barrier round */
-
-    /* First, count levels with a serial BFS to know total_reps */
-    int *serial_level = malloc(nv * sizeof(int));
-    memset(serial_level, -1, nv * sizeof(int));
-    serial_level[root] = 0;
-    long *serial_q = malloc(nv * sizeof(long));
-    long qhead = 0, qtail = 0;
-    serial_q[qtail++] = root;
-    int max_level = 0;
-    while (qhead < qtail) {
-        long v = serial_q[qhead++];
-        for (long j = g->row_ptr[v]; j < g->row_ptr[v + 1]; j++) {
-            long w = g->col_idx[j];
-            if (serial_level[w] == -1) {
-                serial_level[w] = serial_level[v] + 1;
-                serial_q[qtail++] = w;
-                if (serial_level[w] > max_level)
-                    max_level = serial_level[w];
-            }
-        }
-    }
-    free(serial_level);
-    free(serial_q);
-
-    int total_levels = max_level; /* number of barrier rounds needed */
-
-    /* Reset level array again for real BFS */
-    for (long i = 0; i < nv; i++)
-        atomic_store(&bfs_level[i], -1);
-    atomic_store(&bfs_level[root], 0);
-    frontier_in[0] = root;
-    frontier_size = 1;
-    level = 1;
-
     /* Launch workers */
+    atomic_store(&keep_running, 1);
     pthread_barrier_init(&bar_start, NULL, NUM_WORKERS + 1);
     pthread_barrier_init(&bar_end, NULL, NUM_WORKERS + 1);
 
@@ -305,8 +266,7 @@ static bfs_result_t run_bfs_toposteal(csr_graph_t *g, long root, int mode,
     pthread_t threads[NUM_WORKERS];
     for (int i = 0; i < NUM_WORKERS; i++) {
         ctxs[i] = (worker_ctx_t){
-            .id = i, .mode = mode, .weights = weights,
-            .total_reps = total_levels
+            .id = i, .mode = mode, .weights = weights
         };
         pthread_create(&threads[i], NULL, worker_fn, &ctxs[i]);
     }
@@ -314,8 +274,7 @@ static bfs_result_t run_bfs_toposteal(csr_graph_t *g, long root, int mode,
     struct timespec start, end;
     clock_gettime(CLOCK_MONOTONIC, &start);
 
-    while (frontier_size > 0 && level <= max_level) {
-        /* Build tasks for this level */
+    while (frontier_size > 0) {
         int ntasks = (int)((frontier_size + FRONTIER_CHUNK - 1) / FRONTIER_CHUNK);
         if (ntasks > MAX_TASKS_PER_LEVEL) ntasks = MAX_TASKS_PER_LEVEL;
 
@@ -326,7 +285,7 @@ static bfs_result_t run_bfs_toposteal(csr_graph_t *g, long root, int mode,
         bfs_ntasks = ntasks;
 
         long chunk = (frontier_size + ntasks - 1) / ntasks;
-        int half_v = (int)(g->nvertices / 2);
+        int half_v = (int)(nv / 2);
 
         for (int i = 0; i < ntasks; i++) {
             tasks[i].g = g;
@@ -336,14 +295,12 @@ static bfs_result_t run_bfs_toposteal(csr_graph_t *g, long root, int mode,
                 tasks[i].end = frontier_size;
             tasks[i].current_level = level;
 
-            /* NUMA-aware placement based on frontier vertex IDs */
             long sample_v = frontier_in[tasks[i].start];
             int target = (sample_v < half_v) ? 0 : 12;
             task_t t = { .fn = bfs_chunk_kernel, .arg = &tasks[i] };
             deque_push(&bfs_queues[target], t);
         }
 
-        /* Count edges in this level's frontier */
         for (long i = 0; i < frontier_size; i++)
             total_edges += g->row_ptr[frontier_in[i] + 1] -
                            g->row_ptr[frontier_in[i]];
@@ -361,6 +318,10 @@ static bfs_result_t run_bfs_toposteal(csr_graph_t *g, long root, int mode,
     }
 
     clock_gettime(CLOCK_MONOTONIC, &end);
+
+    /* Signal workers to exit */
+    atomic_store(&keep_running, 0);
+    pthread_barrier_wait(&bar_start);
 
     for (int i = 0; i < NUM_WORKERS; i++)
         pthread_join(threads[i], NULL);
