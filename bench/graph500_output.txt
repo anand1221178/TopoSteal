@@ -1,0 +1,315 @@
+================================================================
+  TopoSteal Graph500 BFS Benchmark
+================================================================
+SCALE=20 (1048576 vertices), edge_factor=16 (16777216 directed edges)
+Frontier chunk: 4096 | BFS roots: 16 | Trials: 3
+================================================================
+
+[graph] Generating R-MAT Kronecker graph...
+[graph] Building CSR (undirected)...
+[graph] 1048576 vertices, 33435012 edges (undirected)
+[graph] max degree: 2650, isolated vertices: 87944
+
+[topo] SETUP: walking hwloc tree and gathering ancestors
+[topo] detected 24 cores across topology
+[topo] cpu_map: 0→CPU0 1→CPU2 2→CPU4 3→CPU6 4→CPU8 5→CPU10 6→CPU12 7→CPU14 8→CPU16 9→CPU18 10→CPU20 11→CPU22 12→CPU1 13→CPU3 14→CPU5 15→CPU7 16→CPU9 17→CPU11 18→CPU13 19→CPU15 20→CPU17 21→CPU19 22→CPU21 23→CPU23 
+
+Distance matrix (24 cores):
+     C0   C1   C2   C3   C4   C5   C6   C7   C8   C9   C10  C11  C12  C13  C14  C15  C16  C17  C18  C19  C20  C21  C22  C23  
+C0   0    4    4    4    4    4    4    4    4    4    4    4    10   10   10   10   10   10   10   10   10   10   10   10   
+C1   4    0    4    4    4    4    4    4    4    4    4    4    10   10   10   10   10   10   10   10   10   10   10   10   
+C2   4    4    0    4    4    4    4    4    4    4    4    4    10   10   10   10   10   10   10   10   10   10   10   10   
+C3   4    4    4    0    4    4    4    4    4    4    4    4    10   10   10   10   10   10   10   10   10   10   10   10   
+C4   4    4    4    4    0    4    4    4    4    4    4    4    10   10   10   10   10   10   10   10   10   10   10   10   
+C5   4    4    4    4    4    0    4    4    4    4    4    4    10   10   10   10   10   10   10   10   10   10   10   10   
+C6   4    4    4    4    4    4    0    4    4    4    4    4    10   10   10   10   10   10   10   10   10   10   10   10   
+C7   4    4    4    4    4    4    4    0    4    4    4    4    10   10   10   10   10   10   10   10   10   10   10   10   
+C8   4    4    4    4    4    4    4    4    0    4    4    4    10   10   10   10   10   10   10   10   10   10   10   10   
+C9   4    4    4    4    4    4    4    4    4    0    4    4    10   10   10   10   10   10   10   10   10   10   10   10   
+C10  4    4    4    4    4    4    4    4    4    4    0    4    10   10   10   10   10   10   10   10   10   10   10   10   
+C11  4    4    4    4    4    4    4    4    4    4    4    0    10   10   10   10   10   10   10   10   10   10   10   10   
+C12  10   10   10   10   10   10   10   10   10   10   10   10   0    4    4    4    4    4    4    4    4    4    4    4    
+C13  10   10   10   10   10   10   10   10   10   10   10   10   4    0    4    4    4    4    4    4    4    4    4    4    
+C14  10   10   10   10   10   10   10   10   10   10   10   10   4    4    0    4    4    4    4    4    4    4    4    4    
+C15  10   10   10   10   10   10   10   10   10   10   10   10   4    4    4    0    4    4    4    4    4    4    4    4    
+C16  10   10   10   10   10   10   10   10   10   10   10   10   4    4    4    4    0    4    4    4    4    4    4    4    
+C17  10   10   10   10   10   10   10   10   10   10   10   10   4    4    4    4    4    0    4    4    4    4    4    4    
+C18  10   10   10   10   10   10   10   10   10   10   10   10   4    4    4    4    4    4    0    4    4    4    4    4    
+C19  10   10   10   10   10   10   10   10   10   10   10   10   4    4    4    4    4    4    4    0    4    4    4    4    
+C20  10   10   10   10   10   10   10   10   10   10   10   10   4    4    4    4    4    4    4    4    0    4    4    4    
+C21  10   10   10   10   10   10   10   10   10   10   10   10   4    4    4    4    4    4    4    4    4    0    4    4    
+C22  10   10   10   10   10   10   10   10   10   10   10   10   4    4    4    4    4    4    4    4    4    4    0    4    
+C23  10   10   10   10   10   10   10   10   10   10   10   10   4    4    4    4    4    4    4    4    4    4    4    0    
+
+[TOPOSTEAL] PMU Sampler Thread started.
+BFS roots (vertex ID): 4095 69631 135167 200703 264191 331775 397311 462847 528383 592895 663551 729087 790527 854015 919551 989183 
+
+  Mode             Time(s)       MTEPS  Steals(L/R)
+  ----             -------       -----  -----------
+
+=== Trial 1/3 ===
+  Root 4095 (deg=2650):
+    Uniform           0.1849       180.8  102/113
+    TopoStatic        0.1614       207.1  177/39
+    Topo+PMU          0.1596       209.5  156/61
+    OpenMP(dyn)       0.0938       356.4  -
+  Root 69631 (deg=1304):
+    Uniform           0.1555       215.0  112/103
+    TopoStatic        0.1557       214.7  168/47
+    Topo+PMU          0.1550       215.7  155/65
+    OpenMP(dyn)       0.0906       369.1  -
+  Root 135167 (deg=1174):
+    Uniform           0.1579       211.7  104/115
+    TopoStatic        0.1569       213.1  173/46
+    Topo+PMU          0.1577       212.0  157/62
+    OpenMP(dyn)       0.0925       361.3  -
+  Root 200703 (deg=670):
+    Uniform           0.1576       212.1  114/104
+    TopoStatic        0.1598       209.2  177/37
+    Topo+PMU          0.1577       211.9  160/57
+    OpenMP(dyn)       0.0899       372.0  -
+  Root 264191 (deg=972):
+    Uniform           0.1563       213.8  115/102
+    TopoStatic        0.1550       215.7  176/43
+    Topo+PMU          0.1575       212.3  155/64
+    OpenMP(dyn)       0.0924       361.7  -
+  Root 331775 (deg=534):
+    Uniform           0.1608       207.9  115/102
+    TopoStatic        0.1590       210.3  184/33
+    Topo+PMU          0.1570       212.9  158/58
+    OpenMP(dyn)       0.0911       366.8  -
+  Root 397311 (deg=516):
+    Uniform           0.1570       212.9  110/107
+    TopoStatic        0.1616       206.9  160/59
+    Topo+PMU          0.1621       206.2  150/67
+    OpenMP(dyn)       0.0912       366.7  -
+  Root 462847 (deg=286):
+    Uniform           0.1520       219.9  106/113
+    TopoStatic        0.1505       222.2  171/46
+    Topo+PMU          0.1575       212.3  156/61
+    OpenMP(dyn)       0.0902       370.5  -
+  Root 528383 (deg=752):
+    Uniform           0.1550       215.7  115/102
+    TopoStatic        0.1558       214.6  181/37
+    Topo+PMU          0.1569       213.1  152/65
+    OpenMP(dyn)       0.0919       363.7  -
+  Root 592895 (deg=440):
+    Uniform           0.1611       207.5  113/104
+    TopoStatic        0.1541       217.0  182/36
+    Topo+PMU          0.1578       211.9  163/54
+    OpenMP(dyn)       0.0901       370.9  -
+  Root 663551 (deg=358):
+    Uniform           0.1576       212.1  111/104
+    TopoStatic        0.1572       212.6  174/40
+    Topo+PMU          0.1557       214.7  166/51
+    OpenMP(dyn)       0.0899       371.7  -
+  Root 729087 (deg=218):
+    Uniform           0.1575       212.2  106/111
+    TopoStatic        0.1596       209.5  172/47
+    Topo+PMU          0.1548       216.0  152/65
+    OpenMP(dyn)       0.0951       351.4  -
+  Root 790527 (deg=326):
+    Uniform           0.1570       213.0  115/105
+    TopoStatic        0.1551       215.5  180/38
+    Topo+PMU          0.1598       209.2  156/62
+    OpenMP(dyn)       0.0904       370.0  -
+  Root 854015 (deg=178):
+    Uniform           0.1570       212.9  109/106
+    TopoStatic        0.1541       217.0  171/45
+    Topo+PMU          0.1560       214.3  155/63
+    OpenMP(dyn)       0.0907       368.7  -
+  Root 919551 (deg=170):
+    Uniform           0.1551       215.5  122/95
+    TopoStatic        0.1605       208.3  169/48
+    Topo+PMU          0.1599       209.1  146/72
+    OpenMP(dyn)       0.0906       369.1  -
+  Root 989183 (deg=94):
+    Uniform           0.1558       214.6  108/108
+    TopoStatic        0.1548       216.0  181/34
+    Topo+PMU          0.1552       215.4  151/66
+    OpenMP(dyn)       0.0915       365.4  -
+
+=== Trial 2/3 ===
+  Root 4095 (deg=2650):
+    Uniform           0.1614       207.1  108/108
+    TopoStatic        0.1580       211.6  178/37
+    Topo+PMU          0.1580       211.5  156/60
+    OpenMP(dyn)       0.0925       361.5  -
+  Root 69631 (deg=1304):
+    Uniform           0.1587       210.7  111/104
+    TopoStatic        0.1559       214.4  170/47
+    Topo+PMU          0.1575       212.2  141/80
+    OpenMP(dyn)       0.0922       362.5  -
+  Root 135167 (deg=1174):
+    Uniform           0.1574       212.4  114/104
+    TopoStatic        0.1587       210.6  171/46
+    Topo+PMU          0.1581       211.5  176/42
+    OpenMP(dyn)       0.0896       372.9  -
+  Root 200703 (deg=670):
+    Uniform           0.1620       206.4  115/100
+    TopoStatic        0.1600       209.0  172/43
+    Topo+PMU          0.1574       212.4  167/49
+    OpenMP(dyn)       0.0910       367.4  -
+  Root 264191 (deg=972):
+    Uniform           0.1538       217.3  119/99
+    TopoStatic        0.1572       212.6  178/39
+    Topo+PMU          0.1571       212.7  157/62
+    OpenMP(dyn)       0.0904       369.9  -
+  Root 331775 (deg=534):
+    Uniform           0.1565       213.6  110/109
+    TopoStatic        0.1598       209.1  169/48
+    Topo+PMU          0.1563       213.9  164/54
+    OpenMP(dyn)       0.0901       370.9  -
+  Root 397311 (deg=516):
+    Uniform           0.1551       215.5  111/106
+    TopoStatic        0.1578       211.8  166/51
+    Topo+PMU          0.1603       208.6  162/56
+    OpenMP(dyn)       0.0901       370.8  -
+  Root 462847 (deg=286):
+    Uniform           0.1577       211.9  94/125
+    TopoStatic        0.1574       212.4  186/31
+    Topo+PMU          0.1356       246.4  152/68
+    OpenMP(dyn)       0.0909       367.7  -
+  Root 528383 (deg=752):
+    Uniform           0.1664       200.9  109/106
+    TopoStatic        0.1554       215.1  180/38
+    Topo+PMU          0.1527       218.9  150/68
+    OpenMP(dyn)       0.0910       367.3  -
+  Root 592895 (deg=440):
+    Uniform           0.1590       210.2  114/103
+    TopoStatic        0.1573       212.5  170/47
+    Topo+PMU          0.1560       214.3  161/57
+    OpenMP(dyn)       0.0909       367.6  -
+  Root 663551 (deg=358):
+    Uniform           0.1572       212.7  124/91
+    TopoStatic        0.1562       214.1  179/35
+    Topo+PMU          0.1613       207.3  149/67
+    OpenMP(dyn)       0.0902       370.5  -
+  Root 729087 (deg=218):
+    Uniform           0.1594       209.7  95/121
+    TopoStatic        0.1577       212.0  176/41
+    Topo+PMU          0.1598       209.2  151/68
+    OpenMP(dyn)       0.0908       368.0  -
+  Root 790527 (deg=326):
+    Uniform           0.1586       210.8  101/117
+    TopoStatic        0.1582       211.3  166/51
+    Topo+PMU          0.1545       216.4  157/62
+    OpenMP(dyn)       0.0903       370.1  -
+  Root 854015 (deg=178):
+    Uniform           0.1559       214.4  101/117
+    TopoStatic        0.1539       217.2  176/40
+    Topo+PMU          0.1558       214.5  158/59
+    OpenMP(dyn)       0.0905       369.4  -
+  Root 919551 (deg=170):
+    Uniform           0.1546       216.3  98/120
+    TopoStatic        0.1567       213.3  176/42
+    Topo+PMU          0.1585       210.9  137/82
+    OpenMP(dyn)       0.0907       368.6  -
+  Root 989183 (deg=94):
+    Uniform           0.1540       217.0  97/118
+    TopoStatic        0.1420       235.5  169/46
+    Topo+PMU          0.1558       214.5  147/72
+    OpenMP(dyn)       0.0906       369.1  -
+
+=== Trial 3/3 ===
+  Root 4095 (deg=2650):
+    Uniform           0.1580       211.5  97/120
+    TopoStatic        0.1609       207.7  174/42
+    Topo+PMU          0.1584       211.0  151/66
+    OpenMP(dyn)       0.0910       367.4  -
+  Root 69631 (deg=1304):
+    Uniform           0.1552       215.3  122/97
+    TopoStatic        0.1577       211.9  170/48
+    Topo+PMU          0.1580       211.6  149/70
+    OpenMP(dyn)       0.0934       357.8  -
+  Root 135167 (deg=1174):
+    Uniform           0.1602       208.7  103/117
+    TopoStatic        0.1571       212.8  171/46
+    Topo+PMU          0.1580       211.6  155/63
+    OpenMP(dyn)       0.0925       361.5  -
+  Root 200703 (deg=670):
+    Uniform           0.1551       215.5  103/111
+    TopoStatic        0.1578       211.8  176/40
+    Topo+PMU          0.1624       205.8  144/75
+    OpenMP(dyn)       0.0910       367.3  -
+  Root 264191 (deg=972):
+    Uniform           0.1587       210.7  99/119
+    TopoStatic        0.1546       216.2  176/42
+    Topo+PMU          0.1556       214.8  145/75
+    OpenMP(dyn)       0.0905       369.3  -
+  Root 331775 (deg=534):
+    Uniform           0.1585       210.9  111/106
+    TopoStatic        0.1569       213.1  162/55
+    Topo+PMU          0.1567       213.3  164/55
+    OpenMP(dyn)       0.0910       367.2  -
+  Root 397311 (deg=516):
+    Uniform           0.1609       207.7  104/113
+    TopoStatic        0.1595       209.6  169/48
+    Topo+PMU          0.1617       206.7  163/56
+    OpenMP(dyn)       0.0904       369.7  -
+  Root 462847 (deg=286):
+    Uniform           0.1576       212.1  111/106
+    TopoStatic        0.1572       212.6  171/47
+    Topo+PMU          0.1570       212.9  188/30
+    OpenMP(dyn)       0.0916       365.1  -
+  Root 528383 (deg=752):
+    Uniform           0.1560       214.3  114/103
+    TopoStatic        0.1572       212.6  176/43
+    Topo+PMU          0.1557       214.7  151/69
+    OpenMP(dyn)       0.0919       363.6  -
+  Root 592895 (deg=440):
+    Uniform           0.1501       222.7  110/108
+    TopoStatic        0.1562       214.1  170/46
+    Topo+PMU          0.1593       209.8  152/68
+    OpenMP(dyn)       0.0910       367.3  -
+  Root 663551 (deg=358):
+    Uniform           0.1578       211.9  95/122
+    TopoStatic        0.1590       210.2  177/40
+    Topo+PMU          0.1511       221.2  150/66
+    OpenMP(dyn)       0.0904       369.8  -
+  Root 729087 (deg=218):
+    Uniform           0.1540       217.1  102/115
+    TopoStatic        0.1626       205.5  174/46
+    Topo+PMU          0.1592       210.0  156/62
+    OpenMP(dyn)       0.0912       366.5  -
+  Root 790527 (deg=326):
+    Uniform           0.1529       218.6  108/111
+    TopoStatic        0.1583       211.2  174/46
+    Topo+PMU          0.1569       213.1  149/71
+    OpenMP(dyn)       0.0911       366.9  -
+  Root 854015 (deg=178):
+    Uniform           0.1603       208.5  110/107
+    TopoStatic        0.1613       207.2  170/46
+    Topo+PMU          0.1548       215.9  169/46
+    OpenMP(dyn)       0.0907       368.6  -
+  Root 919551 (deg=170):
+    Uniform           0.1581       211.4  119/100
+    TopoStatic        0.1553       215.2  180/36
+    Topo+PMU          0.1588       210.5  167/48
+    OpenMP(dyn)       0.0909       367.6  -
+  Root 989183 (deg=94):
+    Uniform           0.1537       217.5  104/115
+    TopoStatic        0.1540       217.1  171/44
+    Topo+PMU          0.1430       233.8  155/63
+    OpenMP(dyn)       0.0911       367.0  -
+
+================================================================
+  Summary (mean of 144 BFS runs)
+================================================================
+  Uniform              212.1 MTEPS
+  TopoStatic           212.9 MTEPS
+  Topo+PMU             213.5 MTEPS
+  OpenMP(dyn)          366.9 MTEPS
+
+  Speedup vs Uniform:
+    TopoStatic:    1.00x
+    Topo+PMU:      1.01x
+    OpenMP:        1.73x
+  TopoSteal vs OpenMP: 0.58x
+
+Results written to graph500_results.csv
+[TOPOSTEAL] PMU Sampler Thread stopped.
+
+================================================================
+  Graph500 BFS benchmark complete.
+================================================================
