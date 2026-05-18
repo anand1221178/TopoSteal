@@ -192,13 +192,16 @@ static int is_same_socket(int a, int b) {
     return topo.distance[a][b] < TOPO_DIST_NUMA;
 }
 
+/* Persistent worker pool with barriers (no thread create/join per rep) */
+static pthread_barrier_t bar_start, bar_end;
+static deque_t spmv_queues[NUM_WORKERS];
+static _Atomic int spmv_tasks_done;
+static int spmv_ntasks;
+
 typedef struct {
-    deque_t *queues;
     int id;
     int mode;
-    int num_tasks;
     weights_t *weights;
-    _Atomic int *tasks_done;
 } worker_ctx_t;
 
 static void *worker_fn(void *arg) {
@@ -211,28 +214,34 @@ static void *worker_fn(void *arg) {
     CPU_SET(topo.cpu_map[ctx->id], &cpuset);
     pthread_setaffinity_np(pthread_self(), sizeof(cpuset), &cpuset);
 
-    while (atomic_load(ctx->tasks_done) < ctx->num_tasks) {
-        if (deque_pop(&ctx->queues[ctx->id], &task)) {
-            task.fn(task.arg);
-            atomic_fetch_add(&ctx->tasks_done[0], 1);
-            continue;
-        }
-        int victim;
-        if (ctx->mode > 0) {
-            victim = weights_pick_victim(ctx->weights, ctx->id, &seed);
-        } else {
-            victim = rand_r(&seed) % NUM_WORKERS;
-        }
-        if (victim >= 0 && victim != ctx->id) {
-            if (deque_steal(&ctx->queues[victim], &task)) {
+    for (int rep = 0; rep < OUTER_REPS; rep++) {
+        pthread_barrier_wait(&bar_start);
+
+        while (atomic_load(&spmv_tasks_done) < spmv_ntasks) {
+            if (deque_pop(&spmv_queues[ctx->id], &task)) {
                 task.fn(task.arg);
-                atomic_fetch_add(&ctx->tasks_done[0], 1);
-                if (is_same_socket(ctx->id, victim))
-                    atomic_fetch_add(&local_steals[ctx->id], 1);
-                else
-                    atomic_fetch_add(&remote_steals[ctx->id], 1);
+                atomic_fetch_add(&spmv_tasks_done, 1);
+                continue;
+            }
+            int victim;
+            if (ctx->mode > 0) {
+                victim = weights_pick_victim(ctx->weights, ctx->id, &seed);
+            } else {
+                victim = rand_r(&seed) % NUM_WORKERS;
+            }
+            if (victim >= 0 && victim != ctx->id) {
+                if (deque_steal(&spmv_queues[victim], &task)) {
+                    task.fn(task.arg);
+                    atomic_fetch_add(&spmv_tasks_done, 1);
+                    if (is_same_socket(ctx->id, victim))
+                        atomic_fetch_add(&local_steals[ctx->id], 1);
+                    else
+                        atomic_fetch_add(&remote_steals[ctx->id], 1);
+                }
             }
         }
+
+        pthread_barrier_wait(&bar_end);
     }
     return NULL;
 }
@@ -248,48 +257,55 @@ static spmv_result_t run_spmv_toposteal(csr_matrix_t *mat, int mode,
                                          weights_t *weights,
                                          spmv_task_t *tasks, int ntasks) {
     int half = mat->nrows / 2;
+    spmv_ntasks = ntasks;
 
     for (int i = 0; i < NUM_WORKERS; i++) {
         atomic_store(&local_steals[i], 0);
         atomic_store(&remote_steals[i], 0);
     }
 
+    pthread_barrier_init(&bar_start, NULL, NUM_WORKERS + 1);
+    pthread_barrier_init(&bar_end, NULL, NUM_WORKERS + 1);
+
+    /* Launch persistent worker pool (once) */
+    worker_ctx_t ctxs[NUM_WORKERS];
+    pthread_t threads[NUM_WORKERS];
+    for (int i = 0; i < NUM_WORKERS; i++) {
+        ctxs[i] = (worker_ctx_t){
+            .id = i, .mode = mode, .weights = weights
+        };
+        pthread_create(&threads[i], NULL, worker_fn, &ctxs[i]);
+    }
+
     struct timespec start, end;
     clock_gettime(CLOCK_MONOTONIC, &start);
 
     for (int rep = 0; rep < OUTER_REPS; rep++) {
-        deque_t queues[NUM_WORKERS];
+        /* Prepare work for this rep */
         for (int i = 0; i < NUM_WORKERS; i++)
-            deque_init(&queues[i]);
-
+            deque_init(&spmv_queues[i]);
+        atomic_store(&spmv_tasks_done, 0);
         memset(mat->y, 0, mat->nrows * sizeof(double));
 
-        /* NUMA-aware task placement:
-           rows 0..nrows/2   -> worker 0 (NUMA 0)
-           rows nrows/2..end -> worker 12 (NUMA 1) */
         for (int i = 0; i < ntasks; i++) {
             int target = (tasks[i].row_start < half) ? 0 : 12;
             task_t t = { .fn = spmv_kernel, .arg = &tasks[i] };
-            deque_push(&queues[target], t);
+            deque_push(&spmv_queues[target], t);
         }
 
-        _Atomic int tasks_done = 0;
-        worker_ctx_t ctxs[NUM_WORKERS];
-        pthread_t threads[NUM_WORKERS];
-
-        for (int i = 0; i < NUM_WORKERS; i++) {
-            ctxs[i] = (worker_ctx_t){
-                .queues = queues, .id = i, .mode = mode,
-                .weights = weights, .tasks_done = &tasks_done,
-                .num_tasks = ntasks
-            };
-            pthread_create(&threads[i], NULL, worker_fn, &ctxs[i]);
-        }
-        for (int i = 0; i < NUM_WORKERS; i++)
-            pthread_join(threads[i], NULL);
+        /* Release workers */
+        pthread_barrier_wait(&bar_start);
+        /* Wait for completion */
+        pthread_barrier_wait(&bar_end);
     }
 
     clock_gettime(CLOCK_MONOTONIC, &end);
+
+    for (int i = 0; i < NUM_WORKERS; i++)
+        pthread_join(threads[i], NULL);
+
+    pthread_barrier_destroy(&bar_start);
+    pthread_barrier_destroy(&bar_end);
 
     spmv_result_t r;
     r.time_s = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
