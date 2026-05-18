@@ -19,9 +19,10 @@
 #endif
 
 #define NUM_WORKERS     24
-#define SPMV_ITERS      50
+#define SPMV_ITERS      1
+#define OUTER_REPS      20
 #define TRIALS          5
-#define ROWS_PER_TASK   5000
+#define ROWS_PER_TASK   50000
 
 /* ------------------------------------------------------------------ */
 /*  CSR matrix                                                         */
@@ -135,7 +136,7 @@ static void free_matrix(csr_matrix_t *mat) {
 }
 
 /* ------------------------------------------------------------------ */
-/*  SpMV kernel: y[r0..r1) += A[r0..r1,:] * x   (repeated SPMV_ITERS)*/
+/*  SpMV kernel: y[r0..r1) = A[r0..r1,:] * x  (single pass)          */
 /* ------------------------------------------------------------------ */
 typedef struct {
     csr_matrix_t *mat;
@@ -152,13 +153,11 @@ static void spmv_kernel(void *arg) {
     const double *x = m->x;
     double *y = m->y;
 
-    for (int iter = 0; iter < SPMV_ITERS; iter++) {
-        for (int i = t->row_start; i < t->row_end; i++) {
-            double sum = 0.0;
-            for (int j = row_ptr[i]; j < row_ptr[i + 1]; j++)
-                sum += vals[j] * x[col_idx[j]];
-            y[i] = sum;
-        }
+    for (int i = t->row_start; i < t->row_end; i++) {
+        double sum = 0.0;
+        for (int j = row_ptr[i]; j < row_ptr[i + 1]; j++)
+            sum += vals[j] * x[col_idx[j]];
+        y[i] = sum;
     }
 }
 
@@ -248,48 +247,53 @@ typedef struct {
 static spmv_result_t run_spmv_toposteal(csr_matrix_t *mat, int mode,
                                          weights_t *weights,
                                          spmv_task_t *tasks, int ntasks) {
-    deque_t queues[NUM_WORKERS];
+    int half = mat->nrows / 2;
+
     for (int i = 0; i < NUM_WORKERS; i++) {
-        deque_init(&queues[i]);
         atomic_store(&local_steals[i], 0);
         atomic_store(&remote_steals[i], 0);
     }
 
-    memset(mat->y, 0, mat->nrows * sizeof(double));
-
-    /* NUMA-aware task placement:
-       rows 0..nrows/2   -> worker 0 (NUMA 0)
-       rows nrows/2..end -> worker 12 (NUMA 1) */
-    int half = mat->nrows / 2;
-    for (int i = 0; i < ntasks; i++) {
-        int target = (tasks[i].row_start < half) ? 0 : 12;
-        task_t t = { .fn = spmv_kernel, .arg = &tasks[i] };
-        deque_push(&queues[target], t);
-    }
-
-    _Atomic int tasks_done = 0;
-    worker_ctx_t ctxs[NUM_WORKERS];
-    pthread_t threads[NUM_WORKERS];
-
     struct timespec start, end;
     clock_gettime(CLOCK_MONOTONIC, &start);
 
-    for (int i = 0; i < NUM_WORKERS; i++) {
-        ctxs[i] = (worker_ctx_t){
-            .queues = queues, .id = i, .mode = mode,
-            .weights = weights, .tasks_done = &tasks_done,
-            .num_tasks = ntasks
-        };
-        pthread_create(&threads[i], NULL, worker_fn, &ctxs[i]);
+    for (int rep = 0; rep < OUTER_REPS; rep++) {
+        deque_t queues[NUM_WORKERS];
+        for (int i = 0; i < NUM_WORKERS; i++)
+            deque_init(&queues[i]);
+
+        memset(mat->y, 0, mat->nrows * sizeof(double));
+
+        /* NUMA-aware task placement:
+           rows 0..nrows/2   -> worker 0 (NUMA 0)
+           rows nrows/2..end -> worker 12 (NUMA 1) */
+        for (int i = 0; i < ntasks; i++) {
+            int target = (tasks[i].row_start < half) ? 0 : 12;
+            task_t t = { .fn = spmv_kernel, .arg = &tasks[i] };
+            deque_push(&queues[target], t);
+        }
+
+        _Atomic int tasks_done = 0;
+        worker_ctx_t ctxs[NUM_WORKERS];
+        pthread_t threads[NUM_WORKERS];
+
+        for (int i = 0; i < NUM_WORKERS; i++) {
+            ctxs[i] = (worker_ctx_t){
+                .queues = queues, .id = i, .mode = mode,
+                .weights = weights, .tasks_done = &tasks_done,
+                .num_tasks = ntasks
+            };
+            pthread_create(&threads[i], NULL, worker_fn, &ctxs[i]);
+        }
+        for (int i = 0; i < NUM_WORKERS; i++)
+            pthread_join(threads[i], NULL);
     }
-    for (int i = 0; i < NUM_WORKERS; i++)
-        pthread_join(threads[i], NULL);
 
     clock_gettime(CLOCK_MONOTONIC, &end);
 
     spmv_result_t r;
     r.time_s = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
-    r.gflops = (2.0 * mat->nnz * SPMV_ITERS) / (r.time_s * 1e9);
+    r.gflops = (2.0 * mat->nnz * OUTER_REPS) / (r.time_s * 1e9);
     r.local_steal_count = 0;
     r.remote_steal_count = 0;
     for (int i = 0; i < NUM_WORKERS; i++) {
@@ -305,8 +309,6 @@ static spmv_result_t run_spmv_toposteal(csr_matrix_t *mat, int mode,
 static spmv_result_t run_spmv_openmp(csr_matrix_t *mat) {
     spmv_result_t r = {0};
 #ifdef _OPENMP
-    memset(mat->y, 0, mat->nrows * sizeof(double));
-
     const int *row_ptr = mat->row_ptr;
     const int *col_idx = mat->col_idx;
     const double *vals = mat->values;
@@ -317,7 +319,8 @@ static spmv_result_t run_spmv_openmp(csr_matrix_t *mat) {
     struct timespec start, end;
     clock_gettime(CLOCK_MONOTONIC, &start);
 
-    for (int iter = 0; iter < SPMV_ITERS; iter++) {
+    for (int rep = 0; rep < OUTER_REPS; rep++) {
+        memset(y, 0, N * sizeof(double));
         #pragma omp parallel for schedule(static) num_threads(NUM_WORKERS)
         for (int i = 0; i < N; i++) {
             double sum = 0.0;
@@ -329,7 +332,7 @@ static spmv_result_t run_spmv_openmp(csr_matrix_t *mat) {
 
     clock_gettime(CLOCK_MONOTONIC, &end);
     r.time_s = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
-    r.gflops = (2.0 * mat->nnz * SPMV_ITERS) / (r.time_s * 1e9);
+    r.gflops = (2.0 * mat->nnz * OUTER_REPS) / (r.time_s * 1e9);
 #else
     printf("  [OpenMP not available, skipping]\n");
 #endif
@@ -401,8 +404,8 @@ int main(int argc, char **argv) {
     printf("  TopoSteal SpMV Benchmark\n");
     printf("================================================================\n");
     printf("Matrix: %s (%d rows, %ld nnz)\n", argv[1], mat.nrows, mat.nnz);
-    printf("Tasks: %d (%d rows/task) | SpMV iters: %d | Trials: %d\n",
-           ntasks, ROWS_PER_TASK, SPMV_ITERS, TRIALS);
+    printf("Tasks: %d (%d rows/task) | Outer reps: %d | Trials: %d\n",
+           ntasks, ROWS_PER_TASK, OUTER_REPS, TRIALS);
     printf("Workers: %d | PMU: %s\n", NUM_WORKERS, pmu_ok ? "yes" : "no");
     printf("================================================================\n\n");
     topo_print(&topo);
