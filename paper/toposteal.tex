@@ -30,7 +30,7 @@ apatel80@illinois.edu}
 \maketitle
 
 \begin{abstract}
-Work-stealing schedulers are widely used in parallel runtimes, yet most treat all processor cores as equidistant when selecting steal victims. On modern NUMA architectures, this assumption incurs significant penalties: cross-socket steals access remote DRAM at up to 1.75$\times$ the latency of local memory. We present \textbf{TopoSteal}, a topology-aware work-stealing scheduler that uses \texttt{hwloc} to discover the CPU cache hierarchy at runtime and biases victim selection toward topologically close neighbours using an inverse-square distance weighting. A background thread polls hardware performance counters via \texttt{perf\_event\_open} and dynamically adjusts steal probabilities based on observed cache miss rates, penalizing victims under high cache pressure. We evaluate three scheduling modes---uniform random, static topology-weighted, and dynamic topology+PMU---on a dual-socket Intel Xeon E5-2690v3 system with NUMA distances 10/21. Across five benchmark configurations (50 trials per mode), static topology weighting achieves \textbf{1.15--1.17$\times$ speedup} over uniform stealing, and dynamic PMU feedback matches or slightly improves this to \textbf{1.15--1.18$\times$}, while increasing same-socket steal locality from 50\% to 85\%.
+Work-stealing schedulers are widely used in parallel runtimes, yet most treat all processor cores as equidistant when selecting steal victims. On modern NUMA architectures, this assumption incurs significant penalties: cross-socket steals access remote DRAM at up to 1.75$\times$ the latency of local memory. We present \textbf{TopoSteal}, a topology-aware work-stealing scheduler that uses \texttt{hwloc} to discover the CPU cache hierarchy at runtime and biases victim selection toward topologically close neighbours using an inverse-square distance weighting. A background thread polls hardware performance counters via \texttt{perf\_event\_open} and dynamically adjusts steal probabilities based on observed cache miss rates, penalizing victims under high cache pressure. We evaluate three scheduling modes---uniform random, static topology-weighted, and dynamic topology+PMU---on a dual-socket Intel Xeon E5-2690v3 system with NUMA distances 10/21. Across five benchmark configurations (50 trials per mode), static topology weighting achieves \textbf{1.15--1.17$\times$ speedup} over uniform stealing, and dynamic PMU feedback matches or slightly improves this to \textbf{1.15--1.18$\times$}, while increasing same-socket steal locality from 50\% to 85\%. On SpMV with a 77M-nonzero SuiteSparse matrix, TopoSteal achieves \textbf{7.46 GFLOP/s}, outperforming OpenMP \texttt{schedule(static)} with \texttt{OMP\_PROC\_BIND=close} by \textbf{5\%}.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -257,6 +257,136 @@ Figures~\ref{fig:speedup}--\ref{fig:timeseries} visualize the three-mode benchma
 
 Figure~\ref{fig:speedup} shows that both topology-aware modes achieve remarkably consistent speedup (1.15--1.18$\times$) across all configurations, suggesting that the benefit is a fundamental consequence of reducing cross-socket memory traffic rather than an artifact of a specific task distribution. Figure~\ref{fig:locality} provides the clearest mechanistic explanation: by shifting 35 percentage points of steals from cross-socket to same-socket, TopoSteal avoids the 1.75$\times$ NUMA latency penalty on the majority of stolen work. The per-trial plot (Figure~\ref{fig:timeseries}) confirms that the speedup is stable and not driven by outlier trials, and that the PMU feedback loop operates without introducing variance.
 
+\section{Tail Latency Analysis}
+
+To evaluate TopoSteal's suitability for latency-sensitive workloads such as high-frequency trading infrastructure, we instrument each task with per-task timestamps and report percentile latencies rather than aggregate throughput.
+
+\subsection{Methodology}
+
+Each task records its start and end time using \texttt{CLOCK\_MONOTONIC}. After completion, we compute per-task execution latency, sort the results, and report p50, p90, p99, p99.9, and maximum. We separately bucket tasks by steal type: \emph{local} (same-socket steal), \emph{cross-socket} (remote NUMA steal), and \emph{self} (executed by the owning worker). Three configurations stress different regimes:
+
+\begin{itemize}
+    \item \textbf{Config A}: 2400 tasks, 500K iters, 2 producers/node (baseline)
+    \item \textbf{Config B}: 1200 tasks, 2M iters, 1 producer/node (maximum DRAM pressure)
+    \item \textbf{Config C}: 4800 tasks, 100K iters, 1 producer/node (HFT burst simulation)
+\end{itemize}
+
+\subsection{Cross-Socket Latency Penalty}
+
+Table~\ref{tab:latency} shows the per-task latency breakdown from Config B (heaviest DRAM workload), which most clearly exposes the NUMA penalty.
+
+\begin{table}[h]
+\centering
+\caption{Per-task latency by steal type (Config B, 2M iters).}
+\small
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Steal Type} & \textbf{p50} & \textbf{p99} & \textbf{p99.9} & \textbf{Max} \\
+ & \textbf{(us)} & \textbf{(us)} & \textbf{(us)} & \textbf{(us)} \\
+\midrule
+\multicolumn{5}{l}{\emph{Uniform scheduling}} \\
+\quad Cross-socket & 200,894 & 227,043 & 230,931 & 230,931 \\
+\quad Local steal  & 156,368 & 172,867 & 181,785 & 181,785 \\
+\quad Penalty      & +28.5\% & +31.3\% & +27.0\% & --- \\
+\midrule
+\multicolumn{5}{l}{\emph{TopoSteal (static)}} \\
+\quad Cross-socket & 213,666 & 232,477 & 233,682 & 233,682 \\
+\quad Local steal  & 137,964 & 153,415 & 166,993 & 166,993 \\
+\midrule
+\multicolumn{5}{l}{\emph{TopoSteal (Topo+PMU)}} \\
+\quad Cross-socket & 172,563 & 237,565 & 238,940 & 238,940 \\
+\quad Local steal  & 137,121 & 165,307 & 173,210 & 173,210 \\
+\bottomrule
+\end{tabular}
+\label{tab:latency}
+\end{table}
+
+Cross-socket steals incur a 28--31\% latency penalty per task. The key insight is not that TopoSteal eliminates this penalty---cross-socket steals are still expensive when they occur---but that it reduces \emph{exposure}: from 542 remote steals (50\%) under uniform to 132 (12\%) under TopoStatic, a 76\% reduction.
+
+\subsection{HFT Burst Workload}
+
+Config C simulates a burst of short tasks typical of trading infrastructure. With 4800 tasks of 100K iterations and extreme imbalance (1 producer per node), steal pressure is maximized.
+
+\begin{table}[h]
+\centering
+\caption{Steal exposure and local-steal tail latency (Config C).}
+\small
+\begin{tabular}{lccc}
+\toprule
+\textbf{Metric} & \textbf{Uniform} & \textbf{TopoStatic} & \textbf{Topo+PMU} \\
+\midrule
+Remote steals       & 2,135 (49\%) & 629 (14\%) & 609 (14\%) \\
+Local steal p99.9   & 9,840 us & 8,451 us & \textbf{8,377 us} \\
+Local steal max     & 9,840 us & 12,078 us & \textbf{8,378 us} \\
+Cross-socket p99.9  & 16,717 us & 11,556 us & 11,322 us \\
+\bottomrule
+\end{tabular}
+\label{tab:hft}
+\end{table}
+
+Topo+PMU achieves the lowest local-steal p99.9 at 8,377\,us---a 15\% reduction versus uniform. More critically, it reduces the number of tasks that hit the cross-socket path from 2,135 to 609. For a trading system where \emph{any single} high-latency task can delay downstream processing, this 71\% reduction in worst-case path exposure translates directly to fewer tail latency spikes.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\columnwidth]{../bench/figures/latency_cross_vs_local.pdf}
+\caption{Cross-socket vs local steal p50 latency across all three configurations. The NUMA penalty ranges from 18--28\% depending on task duration.}
+\label{fig:latency_cross}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\columnwidth]{../bench/figures/latency_steal_exposure.pdf}
+\caption{Percentage of steals hitting the cross-socket path. TopoSteal reduces exposure from $\sim$50\% to $\sim$14\% across all configurations.}
+\label{fig:latency_exposure}
+\end{figure}
+
+\section{SpMV: Real-World Sparse Linear Algebra}
+
+To validate TopoSteal on an industry-standard workload, we evaluate it on Sparse Matrix-Vector multiplication (SpMV), the core kernel in iterative solvers, eigenvalue computations, and Intel MKL benchmarks. We use the \texttt{audikw\_1} matrix from the SuiteSparse collection~\cite{suitesparse} (943K rows, 77M nonzeros, structural mechanics from an Audi car body simulation).
+
+\subsection{Methodology}
+
+The CSR matrix is loaded from Matrix Market format. Tasks are row chunks (50K rows each, 19 tasks total) placed on producers at workers 0 and 12 (one per NUMA node), creating imbalanced queues that force work-stealing. The $y$ output vector is first-touch allocated across both NUMA nodes. We run 20 outer repetitions of $y = Ax$ per trial, with a persistent worker pool using barriers (matching OpenMP's thread reuse). The OpenMP baseline uses \texttt{schedule(static)} with \texttt{OMP\_PROC\_BIND=close}---the standard Intel-recommended configuration.
+
+\subsection{Results}
+
+Table~\ref{tab:spmv} summarizes the SpMV results.
+
+\begin{table}[h]
+\centering
+\caption{SpMV performance on audikw\_1 (mean of 5 trials).}
+\small
+\begin{tabular}{lccc}
+\toprule
+\textbf{Mode} & \textbf{GFLOP/s} & \textbf{Local \%} & \textbf{vs Uniform} \\
+\midrule
+Uniform             & 6.86 & 51\% & 1.00$\times$ \\
+OpenMP (static)     & 7.09 & ---  & 1.03$\times$ \\
+\textbf{TopoStatic} & \textbf{7.46} & \textbf{82\%} & \textbf{1.09$\times$} \\
+\textbf{Topo+PMU}   & \textbf{7.46} & \textbf{79\%} & \textbf{1.09$\times$} \\
+\bottomrule
+\end{tabular}
+\label{tab:spmv}
+\end{table}
+
+TopoSteal achieves \textbf{7.46 GFLOP/s}, outperforming both uniform work-stealing (1.09$\times$) and OpenMP with optimal thread binding (1.05$\times$). The key mechanism is steal locality: topology-aware victim selection keeps 82\% of steals on the same socket, compared to 51\% for uniform. This reduces cross-socket DRAM traffic when workers access the CSR arrays and scattered $x$-vector elements.
+
+Notably, the OpenMP baseline uses \emph{static} scheduling with \emph{close} binding---the configuration recommended by Intel for SpMV. TopoSteal's dynamic work-stealing approach surpasses this because the imbalanced task placement (all tasks initially on 2 of 24 workers) requires dynamic load balancing that static partitioning cannot provide, and the topology-aware stealing ensures this rebalancing respects NUMA boundaries.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\columnwidth]{../bench/figures/spmv_gflops.pdf}
+\caption{SpMV GFLOP/s on audikw\_1 across all four scheduling modes. TopoSteal (both static and PMU) outperforms OpenMP's recommended static+close configuration by 5\%.}
+\label{fig:spmv_gflops}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\columnwidth]{../bench/figures/spmv_steal_locality.pdf}
+\caption{Same-socket steal percentage for SpMV. Topology-aware modes achieve 79--82\% local steals versus 51\% for uniform, consistent with the pointer-chase results.}
+\label{fig:spmv_locality}
+\end{figure}
+
 \section{Applications}
 
 TopoSteal's topology-aware scheduling is applicable to any parallel workload where tasks have data locality and the hardware exhibits non-uniform memory access costs.
@@ -283,9 +413,9 @@ Low-latency trading systems pin processes to specific cores but still use task p
 
 \section{Conclusion}
 
-TopoSteal demonstrates that topology-aware victim selection in work-stealing schedulers yields measurable performance improvements on commodity NUMA hardware. By combining \texttt{hwloc}-based topology discovery with $1/d^2$ weighted victim selection and dynamic PMU feedback, TopoSteal achieves 1.15--1.18$\times$ speedup over uniform stealing while increasing same-socket steal locality from 50\% to 85\%. The three-mode evaluation confirms that static topology weighting captures the dominant benefit on 2-socket systems, while the dynamic PMU feedback pipeline operates correctly end-to-end and provides marginal additional gains on homogeneous workloads. The implementation is a portable C library with a four-function API, requiring no application modifications beyond linking.
+TopoSteal demonstrates that topology-aware victim selection in work-stealing schedulers yields measurable performance improvements on commodity NUMA hardware. By combining \texttt{hwloc}-based topology discovery with $1/d^2$ weighted victim selection and dynamic PMU feedback, TopoSteal achieves 1.15--1.18$\times$ speedup over uniform stealing on pointer-chase microbenchmarks while increasing same-socket steal locality from 50\% to 85\%. On real-world SpMV with a SuiteSparse matrix (audikw\_1, 77M nonzeros), TopoSteal outperforms OpenMP's recommended \texttt{schedule(static)} with \texttt{OMP\_PROC\_BIND=close} by 5\%, demonstrating that topology-aware work-stealing can surpass production-quality static scheduling when task placement creates natural imbalance. The implementation is a portable C library requiring no application modifications beyond linking.
 
-Future work includes evaluation on 4+ socket systems where the PMU feedback is expected to provide larger gains due to more complex NUMA topologies, benchmarking with heterogeneous workloads that create asymmetric cache pressure to stress the dynamic adaptation, and application to real workloads such as parallel database query execution and sparse linear algebra.
+Future work includes evaluation on 4+ socket systems where the PMU feedback is expected to provide larger gains due to more complex NUMA topologies, and benchmarking with heterogeneous workloads that create asymmetric cache pressure to stress the dynamic adaptation.
 
 \bibliographystyle{IEEEtran}
 
@@ -326,6 +456,9 @@ C.~Lameter, ``NUMA (Non-Uniform Memory Access): An overview,'' \emph{ACM Queue},
 
 \bibitem{perfevents}
 Linux Kernel Documentation, ``perf\_event\_open(2) --- Linux Programmer's Manual.'' Available: \url{https://man7.org/linux/man-pages/man2/perf_event_open.2.html}
+
+\bibitem{suitesparse}
+T.~A.~Davis and Y.~Hu, ``The University of Florida Sparse Matrix Collection,'' \emph{ACM Trans.~Math.~Softw.}, vol.~38, no.~1, 2011.
 
 \end{thebibliography}
 
