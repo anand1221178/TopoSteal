@@ -1,11 +1,23 @@
 #include "pmu.h" /* pmu struct */
+#include <string.h>
+#include <stdio.h>
+
+/* perf_event_open is Linux-only. On other platforms (e.g. macOS/Apple
+ * Silicon dev boxes) there is no portable equivalent, so PMU sampling is
+ * simply unavailable there. pmu_init() reporting failure is a path
+ * toposteal_init() already handles gracefully - it falls back to static
+ * topology weights and prints a warning (see toposteal.c) - mirroring
+ * topo.c's mock-topology fallback for the same "can't see real hardware"
+ * situation. This lets the full library build and run end-to-end on a
+ * laptop for local iteration, with real PMU feedback kicking in once run
+ * on Linux hardware that supports it.
+ */
+#ifdef __linux__
+
 #include <linux/perf_event.h>
 #include <sys/syscall.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
-#include <string.h>
-#include <stdio.h>
-
 
 int pmu_init(pmu_t *pmu, uint32_t num_workers, int *cpu_map)
 {
@@ -132,3 +144,30 @@ float pmu_get_miss_rate(pmu_t *pmu, uint32_t worker_id)
         return -1;
     }
 }
+
+#else /* !__linux__ : no perf_event_open equivalent, report unavailable */
+
+int pmu_init(pmu_t *pmu, uint32_t num_workers, int *cpu_map)
+{
+    (void)cpu_map;
+    memset(pmu, 0, sizeof(*pmu));
+    pmu->num_workers = num_workers;
+    printf("[TOPOSTEAL] PMU sampling unavailable on this platform (perf_event_open is Linux-only)\n");
+    return -1;
+}
+
+void pmu_start(pmu_t *pmu) { (void)pmu; }
+
+void pmu_stop(pmu_t *pmu) { (void)pmu; }
+
+float pmu_get_miss_rate(pmu_t *pmu, uint32_t worker_id)
+{
+    /* No live sampler thread on this platform, but miss_rates[] itself is
+     * just a plain struct field - reading it back still works, e.g. for
+     * tests that inject synthetic values directly (see tests/test_feedback.c). */
+    if (worker_id < pmu->num_workers)
+        return pmu->miss_rates[worker_id];
+    return -1;
+}
+
+#endif /* __linux__ */

@@ -5,7 +5,9 @@
 #include <time.h>
 #include <pthread.h>
 #include <stdatomic.h>
+#ifdef __linux__
 #include <sched.h>
+#endif
 #include <sys/mman.h>
 #include <math.h>
 #include "../include/topo.h"
@@ -79,10 +81,12 @@ typedef struct {
 
 static void *touch_thread(void *arg) {
     touch_arg_t *ta = (touch_arg_t *)arg;
+#ifdef __linux__
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
     CPU_SET(ta->cpu, &cpuset);
     pthread_setaffinity_np(pthread_self(), sizeof(cpuset), &cpuset);
+#endif
     for (size_t i = 0; i < ta->count; i++)
         ta->arr[i] = i;
     return NULL;
@@ -106,10 +110,12 @@ static void *worker_fn(void *arg) {
     unsigned int seed = (unsigned int)time(NULL) ^ ctx->id;
     task_t task;
 
+#ifdef __linux__
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
     CPU_SET(topo.cpu_map[ctx->id], &cpuset);
     pthread_setaffinity_np(pthread_self(), sizeof(cpuset), &cpuset);
+#endif
 
     while (atomic_load(ctx->tasks_done) < ctx->num_tasks) {
         if (deque_pop(&ctx->queues[ctx->id], &task)) {

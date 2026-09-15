@@ -1,0 +1,16 @@
+# Build artifacts (from Makefile)
+*.o
+*.a
+parallel_sum
+bench_pointer_chase
+bench_latency
+bench_spmv
+bench_graph500
+bench_dlrm_embedding
+deque_stress
+test_topo
+test_deque
+test_weights
+test_feedback
+test_pmu
+test_weights_urgent

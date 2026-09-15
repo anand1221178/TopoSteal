@@ -1,0 +1,134 @@
+% Related Work draft for the TopoSteal extension (topology- and
+% prediction-aware proactive work stealing). Drop into the new paper;
+% NOT part of the original toposteal.tex (different paper, different scope).
+%
+% IMPORTANT: bibliographic details below (author lists, page numbers) are
+% from research-pass notes during this project, not re-verified against
+% the primary sources at draft time. Confirm every \bibitem against the
+% actual paper before submission - do not cite off this file blind.
+
+\section{Related Work}
+\label{sec:related-work-ext}
+
+Section~\ref{sec:related-work} covered the topology-aware work-stealing
+literature TopoSteal itself builds on. This extension's contribution -
+combining physical-topology-aware victim selection with proactive,
+prediction-driven stealing - sits in a gap between two more recent lines
+of work, neither of which combines both signals.
+
+\subsection{Proactive and Predictive Load Balancing}
+
+Chung et al.~\cite{chung2023reactive} extend reactive load balancing with
+an online, ML-regression-based proactive scheme: a dedicated monitoring
+thread characterizes tasks and predicts per-process load one iteration
+ahead, triggering offloading before imbalance manifests rather than after.
+Evaluated on an adaptive-mesh-refinement PDE solver, it reports 1.5--3.4$\times$
+speedups over reactive baselines. Critically, the authors identify
+topology-awareness as unresolved future work, and describe (but do not
+evaluate) a probability-based victim-selection scheme in an appendix -
+the exact combination this extension implements and evaluates.
+
+A2WS~\cite{a2ws2024} is architecturally closer: it extends a Chase-Lev
+deque directly with \emph{preemptive} stealing - initiating a steal once a
+process's ideal completion time estimate signals it will finish early,
+rather than waiting for its deque to empty - and an analytical (non-ML)
+victim-reweighting scheme, explicitly positioned against Chung et
+al.'s approach as lower-overhead (no dedicated monitoring thread). A2WS
+is explicitly topology-agnostic: its only locality notion is a logical
+communication-radius parameter, not physical NUMA/cache distance, and it
+assumes homogeneous tasks, naming per-task weighting as its own next step.
+
+This extension's core claim is that combining what each of these papers
+identifies as its own gap - physical topology-awareness (missing from
+both) with proactive, prediction-driven stealing (present in both, but
+never alongside real hardware distance) - measurably outperforms either
+signal alone. That is the required three-way ablation in
+Section~\ref{sec:eval-ablation}: topology-only reactive (TopoSteal
+as published), prediction-only topology-agnostic (A2WS-shaped), and the
+combined policy.
+
+\subsection{Topology-Aware Work Stealing}
+
+Beyond the prior work already cited in Section~\ref{sec:related-work}
+(SLAW~\cite{guo2010}, Olivier et al.~\cite{olivier2012}, OpenStream~\cite{drebes2014}),
+PufferFish~\cite{pufferfish2020} introduces Hierarchical Elastic Tasks that
+grow or shrink across NUMA places depending on local imbalance, reporting
+1.5--1.9$\times$ speedups over HClib and CilkPlus on memory-bound,
+NUMA-sensitive benchmarks. Like the topology-aware lineage generally, it
+is reactive: none of this line anticipates starvation ahead of time.
+
+\subsection{Microsecond-Scale, Low-Tail-Latency Scheduling}
+
+A separate, more heavily-resourced lineage - ZygOS~\cite{zygos2017},
+Shenango~\cite{shenango2019}, Caladan~\cite{caladan2020}, and
+Perséphone~\cite{persephone} - targets P99/P99.9 tail latency for
+microsecond-scale RPC-style tasks via kernel-bypass runtimes with
+dedicated core-allocation layers (an IOKernel or equivalent), reactive
+per-core work stealing (ZygOS), fine-grained (5\,$\mu$s) core reallocation
+(Shenango), and interference mitigation via multicast IPIs (Caladan).
+This extension does not compete in that space - building a comparable
+kernel-bypass OS layer is out of scope here - but borrows its evaluation
+discipline: Section~\ref{sec:eval-ablation} reports P99/P99.9 completion
+latency and jitter alongside throughput, not throughput alone, precisely
+because this lineage established that average-case numbers hide the
+behavior that matters for interactive and inference-serving workloads.
+
+\subsection{Summary}
+
+No prior work combines physical hardware-topology-aware victim selection
+with proactive/anticipatory stealing in a single mechanism; two
+independent, recent papers~\cite{chung2023reactive,a2ws2024} each name the
+piece the other lacks as their own unaddressed future work. This
+extension evaluates that combination directly, on an AI-inference-adjacent
+workload (Section~\ref{sec:eval-workload}) chosen for its irregular,
+memory-bandwidth-bound task shape rather than as a claimed AI contribution
+in itself.
+
+% --- New \bibitem entries for this section (append to the existing
+%     bibliography; do not renumber/duplicate keys already in
+%     toposteal.tex's \bibitem{blumofe1999} etc.) ---
+
+\begin{thebibliography}{99}
+
+\bibitem{chung2023reactive}
+M.~T. Chung, J.~Weidendorfer, K.~F\"{u}rlinger, and D.~Kranzlm\"{u}ller,
+``From reactive to proactive load balancing for task-based parallel
+applications in distributed memory machines,''
+\emph{Concurrency and Computation: Practice and Experience}, vol.~35,
+no.~24, 2023.
+
+\bibitem{a2ws2024}
+``Adaptive Asynchronous Work-Stealing for distributed load-balancing in
+heterogeneous systems,'' arXiv:2401.04494, 2024.
+% TODO: confirm author list from the source before citing in the
+% submitted paper - not re-verified here.
+
+\bibitem{pufferfish2020}
+V.~Kumar et al., ``PufferFish: NUMA-Aware Work-stealing Library using
+Elastic Tasks,'' in \emph{Proc. IEEE International Conference on High
+Performance Computing, Data, and Analytics (HiPC)}, 2020.
+
+\bibitem{zygos2017}
+G.~Prekas, M.~Kogias, and E.~Bugnion, ``ZygOS: Achieving Low Tail Latency
+for Microsecond-scale Networked Tasks,'' in \emph{Proc. ACM Symposium on
+Operating Systems Principles (SOSP)}, 2017.
+% TODO: confirm author order before citing in the submitted paper.
+
+\bibitem{shenango2019}
+A.~Ousterhout, J.~Fried, J.~Behrens, A.~Belay, and H.~Balakrishnan,
+``Shenango: Achieving High CPU Efficiency for Latency-sensitive Datacenter
+Workloads,'' in \emph{Proc. USENIX Symposium on Networked Systems Design
+and Implementation (NSDI)}, 2019.
+
+\bibitem{caladan2020}
+J.~Fried, Z.~Ruan, A.~Ousterhout, and A.~Belay, ``Caladan: Mitigating
+Interference at Microsecond Timescales,'' in \emph{Proc. USENIX Symposium
+on Operating Systems Design and Implementation (OSDI)}, 2020.
+
+\bibitem{persephone}
+``Pers\'{e}phone: A kernel-bypass OS scheduler for dynamic, unpredictable
+service times at microsecond timescales.''
+% TODO: confirm exact title, authors, and venue before citing - noted
+% from a research pass, not re-verified against the primary source.
+
+\end{thebibliography}

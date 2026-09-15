@@ -5,7 +5,9 @@
 #include <time.h>
 #include <math.h>
 #include <pthread.h>
+#ifdef __linux__
 #include <sched.h>
+#endif
 #include <sys/mman.h>
 #include <stdatomic.h>
 #include "../include/topo.h"
@@ -184,10 +186,12 @@ static void *worker_fn(void *arg) {
     unsigned int seed = (unsigned int)time(NULL) ^ ctx->id;
     task_t task;
 
+#ifdef __linux__
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
     CPU_SET(topo.cpu_map[ctx->id], &cpuset);
     pthread_setaffinity_np(pthread_self(), sizeof(cpuset), &cpuset);
+#endif
 
     while (1) {
         pthread_barrier_wait(&bar_start);

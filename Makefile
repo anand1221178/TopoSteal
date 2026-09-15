@@ -7,7 +7,7 @@ OBJS = $(SRCS:.c=.o)
 
 LIB_STATIC = libtoposteal.a
 
-all: $(LIB_STATIC) parallel_sum bench_pointer_chase bench_latency bench_spmv bench_graph500 deque_stress
+all: $(LIB_STATIC) parallel_sum bench_pointer_chase bench_latency bench_spmv bench_graph500 bench_dlrm_embedding deque_stress
 
 $(LIB_STATIC): $(OBJS)
 	ar rcs $@ $^
@@ -30,6 +30,9 @@ bench_spmv: bench/spmv_bench.c $(LIB_STATIC)
 bench_graph500: bench/graph500_bfs.c $(LIB_STATIC)
 	$(CC) $(CFLAGS) -fopenmp $< -L. -ltoposteal $(LDFLAGS) -o $@
 
+bench_dlrm_embedding: bench/dlrm_embedding.c $(LIB_STATIC)
+	$(CC) $(CFLAGS) $< -L. -ltoposteal $(LDFLAGS) -o $@
+
 deque_stress: tests/deque_stress.c $(LIB_STATIC)
 	$(CC) $(CFLAGS) $< -L. -ltoposteal $(LDFLAGS) -o $@
 
@@ -45,16 +48,24 @@ test_weights: tests/test_weights.c $(LIB_STATIC)
 test_feedback: tests/test_feedback.c $(LIB_STATIC)
 	$(CC) $(CFLAGS) $< -L. -ltoposteal $(LDFLAGS) -o $@
 
-test: test_topo test_deque test_weights test_feedback deque_stress
+test_pmu: tests/test_pmu.c $(LIB_STATIC)
+	$(CC) $(CFLAGS) $< -L. -ltoposteal $(LDFLAGS) -o $@
+
+test_weights_urgent: tests/test_weights_urgent.c $(LIB_STATIC)
+	$(CC) $(CFLAGS) $< -L. -ltoposteal $(LDFLAGS) -o $@
+
+test: test_topo test_deque test_weights test_feedback test_pmu test_weights_urgent deque_stress
 	@echo "--- Running tests ---"
 	sudo ./test_topo
 	sudo ./test_deque
 	sudo ./test_weights
 	sudo ./test_feedback
+	sudo ./test_pmu
+	sudo ./test_weights_urgent
 	sudo ./deque_stress
 
 clean:
-	rm -f src/*.o $(LIB_STATIC) parallel_sum bench_pointer_chase bench_latency bench_spmv bench_graph500 deque_stress
-	rm -f test_topo test_deque test_weights test_feedback
+	rm -f src/*.o $(LIB_STATIC) parallel_sum bench_pointer_chase bench_latency bench_spmv bench_graph500 bench_dlrm_embedding deque_stress
+	rm -f test_topo test_deque test_weights test_feedback test_pmu test_weights_urgent
 
 .PHONY: all test clean
