@@ -26,11 +26,22 @@
 #define DURATION_EMA_ALPHA 0.2
 
 /* Proactively steal when the predicted time to drain our own queue falls
- * below this many average-task-durations of buffer. 2.0 means "steal
- * ahead once we're down to ~1 task of local buffer left", generalizing
- * A2WS's preemptive theft ("start stealing right after the first task
- * finishes") into a duration-aware threshold instead of a fixed count. */
-#define STEAL_AHEAD_LOOKAHEAD 2.0
+ * below this many average-task-durations of buffer. Generalizes A2WS's
+ * preemptive theft ("start stealing right after the first task finishes")
+ * into a duration-aware threshold instead of a fixed count.
+ *
+ * ponytail: bumped 2.0 -> 8.0 as a diagnostic experiment, pending
+ * validation. 2.0 showed ~no difference between policies on real
+ * hardware even under a deliberate 20x load skew - possible causes: (a)
+ * the mechanism genuinely has little headroom here, since a steal is one
+ * near-instant CAS on this single-node in-memory deque, so anticipating
+ * it saves almost nothing reactive stealing doesn't already get for free
+ * (unlike A2WS's actual MPI setting, or TopoFeed's original I/O-bound
+ * framing, where a steal has real latency to hide); or (b) 2.0 just
+ * wasn't aggressive enough to matter. This tests which. Revert to 2.0 if
+ * it doesn't change the ablation numbers - that would point at (a), a
+ * real finding about single-node CAS-deque steal cost, not a bug. */
+#define STEAL_AHEAD_LOOKAHEAD 8.0
 
 /* ponytail: fixed-capacity ring for latency percentiles - samples past
  * this many are dropped (fine for a percentile *estimate*, not a log).
